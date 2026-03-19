@@ -1,0 +1,15 @@
+module.exports = {
+  apps: [
+    {
+      name: "synergia",
+      script: "node_modules/tsx/dist/cli.mjs",
+      args: "src/index.ts",
+      interpreter: "node",
+      env: {
+        NODE_ENV: "development",
+      },
+      autorestart: true,
+      max_memory_restart: '1G'
+    },
+  ],
+};
