@@ -42,31 +42,26 @@ bot.command('reset', async (ctx) => {
     }
 });
 
-bot.command('help', async (ctx) => {
-    await showHelp(ctx);
-});
-
-// Captura específicamente la variante "/?" (que no es un comando válido para Telegram pero es común)
-bot.hears(/^\/\?$/, async (ctx) => {
-    await showHelp(ctx);
-});
+// Soporte para /ayuda, /help y /?
+bot.command(['ayuda', 'help'], async (ctx) => await showHelp(ctx));
+bot.hears(/^\/\?$/, async (ctx) => await showHelp(ctx));
 
 async function showHelp(ctx: any) {
-    const helpMessage = `
-🤖 *Comandos de SynergIA:*
+    const helpMessage = 
+`🤖 *Comandos de SynergIA:*
 
-/start \- Iniciar el bot y recibir saludo.
-/reset \- Borrar el historial de la conversación actual.
-/audio \- Ver el modo actual de respuesta de audio.
-/audio voz \- Activar respuestas con mensajes de voz.
-/audio \-\-texto \- Responder solo con texto (modo por defecto).
-/audio off \- Desactivar todas las respuestas de audio.
-/help o /? \- Ver esta lista de ayuda.
+• /start \- Inicia el bot y recibe el saludo inicial\.
+• /reset \- Borra el historial de la conversación actual\.
+• /audio \- Ver el modo de audio actual\.
+• /audio voz \- Activar respuestas con voz\.
+• /audio texto \- Responder solo con texto\.
+• /audio off \- Desactivar audio\.
+• /ayuda o /help \- Ver esta lista de ayuda\.
 
 *Tips:* 
-• Puedes enviarme PDFs o archivos Word para que los analice.
-• Puedes enviarme mensajes de voz y te responderé según tu configuración de /audio.
-    `;
+• Puedes enviarme PDFs o archivos Word para que los analice\.
+• Puedes enviarme mensajes de voz y te responderé según tu configuración de /audio\.`;
+
     await ctx.reply(helpMessage, { parse_mode: 'MarkdownV2' });
 }
 
@@ -79,22 +74,24 @@ bot.command('audio', async (ctx) => {
 
     if (!args) {
         const currentMode = memory.getAudioMode(userId);
-        return await ctx.reply(`🔊 Modo de audio actual: *${currentMode}*\n\nUsa '/audio voz', '/audio --texto' o '/audio off' para cambiarlo.`, { parse_mode: 'Markdown' });
+        const modeDesc = currentMode === 'voice' ? '🎙️ Voz' : currentMode === 'text' ? '✍️ Texto' : '🔇 Desactivado';
+        return await ctx.reply(`🔊 Modo de audio actual: *${modeDesc}*\n\nUsa '/audio voz', '/audio texto' o '/audio off' para cambiarlo.`, { parse_mode: 'Markdown' });
     }
 
     if (args === 'voz' || args === 'voice') {
         memory.setAudioMode(userId, 'voice');
         await ctx.reply('🎙️ Modo de audio configurado a: *Voz*. Ahora te responderé con mensajes de audio.', { parse_mode: 'Markdown' });
-    } else if (args === '--texto' || args === 'texto' || args === 'text') {
+    } else if (args === 'texto' || args === 'text' || args === '--texto') {
         memory.setAudioMode(userId, 'text');
         await ctx.reply('✍️ Modo de audio configurado a: *Texto*. Responderé solo con mensajes escritos.', { parse_mode: 'Markdown' });
-    } else if (args === 'off') {
+    } else if (args === 'off' || args === 'desactivar') {
         memory.setAudioMode(userId, 'off');
         await ctx.reply('🔇 Modo de audio configurado a: *Desactivado*.', { parse_mode: 'Markdown' });
     } else {
-        await ctx.reply("❌ Opción no válida. Usa 'voz', '--texto' o 'off'.");
+        await ctx.reply("❌ Opción no válida. Usa 'voz', 'texto' o 'off'.");
     }
 });
+
 
 
 // Manejador de documentos
