@@ -47,22 +47,22 @@ bot.command(['ayuda', 'help'], async (ctx) => await showHelp(ctx));
 bot.hears(/^\/\?$/, async (ctx) => await showHelp(ctx));
 
 async function showHelp(ctx: any) {
-    const helpMessage = 
+    const helpMessage =
 `🤖 *Comandos de SynergIA:*
 
-• /start \- Inicia el bot y recibe el saludo inicial\.
-• /reset \- Borra el historial de la conversación actual\.
-• /audio \- Ver el modo de audio actual\.
-• /audio voz \- Activar respuestas con voz\.
-• /audio texto \- Responder solo con texto\.
-• /audio off \- Desactivar audio\.
-• /ayuda o /help \- Ver esta lista de ayuda\.
+• /start - Inicia el bot y recibe el saludo inicial.
+• /reset - Borra el historial de la conversación actual.
+• /audio - Ver el modo de audio actual.
+• /audio voz - Activar respuestas con voz.
+• /audio texto - Responder solo con texto.
+• /audio off - Desactivar audio.
+• /ayuda o /help - Ver esta lista de ayuda.
 
-*Tips:* 
-• Puedes enviarme PDFs o archivos Word para que los analice\.
-• Puedes enviarme mensajes de voz y te responderé según tu configuración de /audio\.`;
+*Tips:*
+• Puedes enviarme PDFs o archivos Word para que los analice.
+• Puedes enviarme mensajes de voz y te responderé según tu configuración de /audio.`;
 
-    await ctx.reply(helpMessage, { parse_mode: 'MarkdownV2' });
+    await ctx.reply(helpMessage, { parse_mode: 'Markdown' });
 }
 
 
