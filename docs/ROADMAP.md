@@ -44,9 +44,9 @@ Que SynergIA funcione **24/7 aunque la PC esté apagada**, desplegada en la nube
   - Configurar las variables de entorno del `.env` en el dashboard de Railway.
   - Verificar que el bot inicia correctamente en producción.
 
-- [ ] **Renovar el token OAuth de Gmail** (`gog.exe`).
-  - El token actual ha expirado (`invalid_grant`).
-  - Reautenticar la herramienta de envío de correos.
+- [x] **Renovar el token OAuth de Gmail** (`gog.exe`).
+  - El token anterior había expirado.
+  - Se realizó la re-autorización mediante el flujo OAuth de Google.
 
 ---
 
