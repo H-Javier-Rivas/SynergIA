@@ -50,23 +50,60 @@ Que SynergIA funcione **24/7 aunque la PC esté apagada**, desplegada en la nube
 
 ---
 
-## 🔮 Fase 3 — Multi-usuario con créditos independientes (FUTURA)
+## 🔮 Fase 3 — Arquitectura Multi-tenant y SaaS (EN PROCESO)
 
 ### Objetivo
-Permitir que cada usuario autorizado use **sus propias claves de API**, de modo que los créditos de IA sean independientes.
+Permitir que el mismo código fuente ejecute múltiples "bots" independientes (clientes), cada uno con su propia configuración, base de datos local y tokens de API.
 
-### Diseño propuesto
-- Nuevo comando: `/clave [GROQ|GEMINI] [api_key]` para que cada usuario configure su propia llave.
-- Tabla en Firestore: `user_config` con las llaves cifradas por usuario.
-- El motor del agente (`loop.ts`) consultará primero si el usuario tiene su propia llave antes de usar la llave maestra.
+### Diseño y Tareas
+- [x] Refactorización de `src/config/index.ts` para cargar configuraciones dinámicas basadas en `INSTANCE_ID`.
+- [x] Aislamiento de las rutas de bases de datos locales (ej. `memory_${INSTANCE_ID}.db`).
+- [x] Plantilla PM2 (`ecosystem.example.config.cjs`) para gestionar e iniciar múltiples clientes a la vez en el servidor.
+- [ ] Nuevo comando opcional `/clave [GROQ|GEMINI] [api_key]` para que un usuario pueda sobreescribir la llave del cliente con la suya propia.
+
+---
+
+## 💼 Fase 4 — Panel de Control y Monetización (FUTURA)
+
+### Objetivo
+Crear una plataforma administrativa ("Admin Dashboard") para gestionar clientes, configurar sus tokens y cobrar suscripciones por el uso del bot.
+
+### Funcionalidades
+- **Frontend Admin**: Interfaz web (Angular/React/Vue o similar) para "Dar de alta" nuevos clientes visualmente.
+- **Gestor de Pagos**: Integración con pasarelas de pago (ej. Stripe) para cobrar mensualidades.
+- **Monitoreo**: Panel centralizado para ver el estado de salud, consumo de AI y uptime de cada instancia.
+
+---
+
+## 🐳 Fase 5 — Dockerización y Orquestación (FUTURA)
+
+### Objetivo
+Escalar la infraestructura para soportar cientos de clientes simultáneamente de forma segura y portable.
+
+### Funcionalidades
+- **Docker**: Crear un `Dockerfile` base para aislar las dependencias y procesos de SynergIA.
+- **Orquestación**: Utilizar `docker-compose` o plataformas como Kubernetes para levantar y apagar bots automáticamente.
+- [ ] **Pipelines CI/CD**: Despliegues automatizados que renueven los contenedores en producción sin afectar a los usuarios.
+
+---
+
+## ☁️ Fase 6 — Arquitectura Serverless y Escalamiento Masivo (+1000 Clientes) (FUTURA)
+
+### Objetivo
+Migrar la infraestructura a un modelo Serverless (ej. Google Cloud Run, AWS Lambda) para eliminar los costos fijos de servidores inactivos y manejar picos masivos de mensajes de forma automática y elástica.
+
+### Funcionalidades
+- [ ] **Migración a Webhooks**: Reemplazar WebSockets/Long Polling por Webhooks de Telegram para invocar las funciones Serverless únicamente cuando llega un mensaje nuevo.
+- [ ] **Desacoplamiento de Base de Datos**: Reemplazar cualquier dependencia de archivos locales (como `memory.db` en SQLite) por bases de datos Cloud-Native (ej. Firestore, PostgreSQL, DynamoDB).
+- [ ] **Sistema de Colas (Message Queue)**: Implementar Google Cloud Tasks o Pub/Sub para gestionar picos de tráfico y evitar los límites de tasa (*rate limit*: HTTP 429) de las APIs de IA (Groq/Gemini).
+- [ ] **Configuración Totalmente Dinámica**: Cargar `API_KEYS` y configuración del tenant desde la base de datos o Secret Manager en milisegundos por cada mensaje, en lugar de archivos `.env`.
 
 ---
 
 ## 💡 Ideas y notas adicionales
 
-- **Oracle Cloud Free Tier**: Alternativa gratuita para alojar en un VPS si Railway presenta limitaciones.
-- **Modo público**: Evaluar si en algún momento se abre el bot a usuarios no autorizados (requiere sistema de cuotas).
-- **Panel de administración**: Una pequeña interfaz web para ver el historial de conversaciones y gestionar usuarios autorizados.
+- **Oracle Cloud Free Tier**: Alternativa gratuita para alojar en un VPS.
+- **Modo público**: Evaluar si el bot de algún cliente se abre al público (requiere cuotas estrictas).
 
 ---
 
