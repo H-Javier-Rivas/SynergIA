@@ -11,5 +11,17 @@ module.exports = {
       autorestart: true,
       max_memory_restart: '1G'
     },
+    {
+      name: "synergia-tutor",
+      script: "node_modules/tsx/dist/cli.mjs",
+      args: "src/index.ts",
+      interpreter: "node",
+      env: {
+        NODE_ENV: "production",
+        INSTANCE_ID: "tutor"
+      },
+      autorestart: true,
+      max_memory_restart: '1G'
+    }
   ],
 };

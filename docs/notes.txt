@@ -1,0 +1,7 @@
+Comandos útiles para gestionar SynergIA:
+
+Ver logs: npx pm2 logs synergia
+Reiniciar: npx pm2 restart synergia
+Detener todo: npx pm2 stop all
+Estado general: npx pm2 status
+

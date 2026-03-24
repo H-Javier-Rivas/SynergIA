@@ -1,0 +1,15 @@
+{
+  "commands": {
+    "buscar_paper": true,
+    "citar": true,
+    "mejorar_redaccion": true,
+    "corregir": true,
+    "parafrasear": true,
+    "resumir": true,
+    "teorizar": true
+  },
+  "features": {
+    "audio_response": true,
+    "document_analysis": true
+  }
+}

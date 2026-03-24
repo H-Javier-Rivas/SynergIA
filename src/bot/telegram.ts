@@ -1,5 +1,6 @@
 import { Bot, InputFile } from 'grammy';
 import { config } from '../config/index.js';
+import { capabilities } from '../config/capabilities.js';
 import { processUserMessage } from '../agent/loop.js';
 import { transcribeAudio } from '../agent/transcription.js';
 import { generateSpeech } from '../agent/tts.js';
@@ -32,7 +33,7 @@ bot.use(async (ctx, next) => {
 
 // Comandos
 bot.command('start', async (ctx) => {
-    await ctx.reply('¡Hola! Soy SynergIA, tu agente personal. ¿En qué te puedo ayudar hoy?');
+    await ctx.reply(`¡Hola! Soy <b>${config.BOT_NAME}</b>, tu agente personal. ¿En qué te puedo ayudar hoy?`, { parse_mode: 'HTML' });
 });
 
 bot.command('reset', async (ctx) => {
@@ -48,7 +49,7 @@ bot.hears(/^\/\?$/, async (ctx) => await showHelp(ctx));
 
 async function showHelp(ctx: any) {
     const helpMessage =
-`🤖 *Comandos de SynergIA:*
+`🤖 <b>Comandos de ${config.BOT_NAME}:</b>
 
 • /start - Inicia el bot y recibe el saludo inicial.
 • /reset - Borra el historial de la conversación actual.
@@ -58,11 +59,11 @@ async function showHelp(ctx: any) {
 • /audio off - Desactivar audio.
 • /ayuda o /help - Ver esta lista de ayuda.
 
-*Tips:*
+<b>Tips:</b>
 • Puedes enviarme PDFs o archivos Word para que los analice.
 • Puedes enviarme mensajes de voz y te responderé según tu configuración de /audio.`;
 
-    await ctx.reply(helpMessage, { parse_mode: 'Markdown' });
+    await ctx.reply(helpMessage, { parse_mode: 'HTML' });
 }
 
 
@@ -75,18 +76,18 @@ bot.command('audio', async (ctx) => {
     if (!args) {
         const currentMode = memory.getAudioMode(userId);
         const modeDesc = currentMode === 'voice' ? '🎙️ Voz' : currentMode === 'text' ? '✍️ Texto' : '🔇 Desactivado';
-        return await ctx.reply(`🔊 Modo de audio actual: *${modeDesc}*\n\nUsa '/audio voz', '/audio texto' o '/audio off' para cambiarlo.`, { parse_mode: 'Markdown' });
+        return await ctx.reply(`🔊 Modo de audio actual: <b>${modeDesc}</b>\n\nUsa '/audio voz', '/audio texto' o '/audio off' para cambiarlo.`, { parse_mode: 'HTML' });
     }
 
     if (args === 'voz' || args === 'voice') {
         memory.setAudioMode(userId, 'voice');
-        await ctx.reply('🎙️ Modo de audio configurado a: *Voz*. Ahora te responderé con mensajes de audio.', { parse_mode: 'Markdown' });
+        await ctx.reply('🎙️ Modo de audio configurado a: <b>Voz</b>. Ahora te responderé con mensajes de audio.', { parse_mode: 'HTML' });
     } else if (args === 'texto' || args === 'text' || args === '--texto') {
         memory.setAudioMode(userId, 'text');
-        await ctx.reply('✍️ Modo de audio configurado a: *Texto*. Responderé solo con mensajes escritos.', { parse_mode: 'Markdown' });
+        await ctx.reply('✍️ Modo de audio configurado a: <b>Texto</b>. Responderé solo con mensajes escritos.', { parse_mode: 'HTML' });
     } else if (args === 'off' || args === 'desactivar') {
         memory.setAudioMode(userId, 'off');
-        await ctx.reply('🔇 Modo de audio configurado a: *Desactivado*.', { parse_mode: 'Markdown' });
+        await ctx.reply('🔇 Modo de audio configurado a: <b>Desactivado</b>.', { parse_mode: 'HTML' });
     } else {
         await ctx.reply("❌ Opción no válida. Usa 'voz', 'texto' o 'off'.");
     }
@@ -223,15 +224,37 @@ bot.on(['message:voice', 'message:audio'], async (ctx) => {
     }
 });
 
+// Función auxiliar para forzar la limpieza de Markdown terco a HTML amigable para Telegram
+function formatForTelegramHtml(text: string): string {
+    let html = text;
+    
+    // Convertir Títulos Markdown a negrita HTML
+    html = html.replace(/^#{1,4}\s+(.*)$/gm, '<b>$1</b>');
+    
+    // Convertir Negritas Markdown a HTML
+    html = html.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>');
+    
+    // Convertir Tachado
+    html = html.replace(/~~(.*?)~~/g, '<s>$1</s>');
+    
+    // Transformar listas Markdown (* o -) a viñetas seguras (•) para evitar fallos de itálicas
+    html = html.replace(/^\s*[\*-]\s+/gm, '• ');
+
+    return html;
+}
+
 // Función auxiliar para dividir mensajes largos
 async function sendLongMessage(ctx: any, text: string) {
+    const formattedText = formatForTelegramHtml(text);
     const MAX_LENGTH = 4090;
-    if (text.length <= MAX_LENGTH) {
-        return await ctx.reply(text);
+    const opts = { parse_mode: 'HTML' as const };
+    
+    if (formattedText.length <= MAX_LENGTH) {
+        return await ctx.reply(formattedText, opts);
     }
 
     const chunks = [];
-    let currentText = text;
+    let currentText = formattedText;
 
     while (currentText.length > 0) {
         if (currentText.length <= MAX_LENGTH) {
@@ -247,9 +270,51 @@ async function sendLongMessage(ctx: any, text: string) {
     }
 
     for (const chunk of chunks) {
-        await ctx.reply(chunk);
+        await ctx.reply(chunk, opts);
     }
 }
+
+// Manejador dinámico de comandos de IA
+bot.on('message:entities:bot_command', async (ctx, next) => {
+    const text = ctx.message.text || ctx.message.caption || '';
+    const match = text.match(/^\/([a-zA-Z0-9_]+)/);
+    
+    if (!match) return next();
+    
+    const cmdName = match[1].toLowerCase();
+    
+    // Verificamos si es un comando controlado por capabilities
+    if (capabilities.commands && capabilities.commands[cmdName] !== undefined) {
+        if (capabilities.commands[cmdName] === true) {
+            await ctx.replyWithChatAction('typing');
+            try {
+                const userId = ctx.from.id;
+                const extraText = text.replace(`/${cmdName}`, '').trim();
+                const instruction = `[INSTRUCCIÓN INTERNA AL SISTEMA] El usuario ha invocado el comando "/${cmdName}". Tu tarea es ejecutar la acción correspondiente de manera elegante y narrativa, aplicando tu estilo profesional al contexto actual o al texto adjunto: "${extraText}". NO respondas con viñetas mecánicas ni enumeraciones markdown innecesarias, aplica un estilo fluido, descriptivo y académico.`;
+                
+                const replyText = await processUserMessage(userId, instruction);
+                await sendLongMessage(ctx, replyText);
+
+                if (memory.getAudioMode(userId) === 'voice') {
+                    const audioPath = await generateSpeech(replyText);
+                    if (audioPath) {
+                        await ctx.replyWithVoice(new InputFile(audioPath));
+                        if (fs.existsSync(audioPath)) fs.unlinkSync(audioPath);
+                    }
+                }
+            } catch (error: any) {
+                console.error(`Error procesando comando dinámico ${cmdName}:`, error);
+                await ctx.reply(`Error procesando comando: ${error.message}`);
+            }
+        } else {
+            // Comando apagado en configuración
+            await ctx.reply('🔒 Este comando no está habilitado en mi configuración actual (plan/versión).');
+        }
+    } else {
+        // No es un comando cubierto por capabilities, delegamos
+        await ctx.reply('Comando no reconocido. Escribe /ayuda para ver mis opciones.');
+    }
+});
 
 // Manejador principal de mensajes
 bot.on('message:text', async (ctx) => {
