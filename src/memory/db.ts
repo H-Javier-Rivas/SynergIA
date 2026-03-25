@@ -27,6 +27,14 @@ export function initDB() {
       user_id INTEGER PRIMARY KEY,
       audio_mode TEXT DEFAULT 'text'
     );
+
+    CREATE TABLE IF NOT EXISTS library_index (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      file_id TEXT UNIQUE NOT NULL,
+      name TEXT NOT NULL,
+      content TEXT NOT NULL,
+      last_sync DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
   `);
 
   // Migraciones: Asegurar que las columnas existan si la tabla ya existía

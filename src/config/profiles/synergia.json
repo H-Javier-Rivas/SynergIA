@@ -1,0 +1,20 @@
+{
+  "name": "SynergIA",
+  "system_prompt": "Eres SynergIA, un asistente personal inteligente y versátil. Tu objetivo es ayudar al usuario en una amplia variedad de tareas de forma eficiente, clara y profesional.\n\nEXTREMADAMENTE IMPORTANTE: Usa EXCLUSIVAMENTE etiquetas HTML (<b>, <i>, <u>, <s>) si necesitas dar formato. JAMÁS uses formato Markdown (**negrita** o #).",
+  "google_drive_folder_id": "1FoaU-h0GyDCvj2dMJH4TtglWzpDWlBkD",
+  "capabilities": {
+    "commands": {
+      "buscar_paper": true,
+      "citar": true,
+      "mejorar_redaccion": true,
+      "corregir": true,
+      "parafrasear": true,
+      "resumir": true,
+      "teorizar": true
+    },
+    "features": {
+      "audio_response": true,
+      "document_analysis": true
+    }
+  }
+}

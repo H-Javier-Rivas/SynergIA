@@ -1,18 +1,36 @@
 import { Bot, InputFile } from 'grammy';
 import { config } from '../config/index.js';
-import { capabilities } from '../config/capabilities.js';
 import { processUserMessage } from '../agent/loop.js';
 import { transcribeAudio } from '../agent/transcription.js';
 import { generateSpeech } from '../agent/tts.js';
 import { extractTextFromPdf, extractTextFromDocx } from '../agent/document.js';
+import { syncLibrary } from '../agent/library.js';
 import { memory } from '../memory/history.js';
 import fs from 'fs';
 import path from 'path';
 import { promisify } from 'util';
 import { pipeline } from 'stream';
 
-const streamPipeline = promisify(pipeline);
 export const bot = new Bot(config.TELEGRAM_BOT_TOKEN);
+
+// Configurar menú de comandos en Telegram de forma dinámica
+const baseCommands = [
+    { command: 'start', description: 'Iniciar y recibir saludo' },
+    { command: 'reset', description: 'Borrar historial' },
+    { command: 'audio', description: 'Configurar voz/texto' },
+    { command: 'sync', description: 'Sincronizar Drive' },
+    { command: 'ayuda', description: 'Ver ayuda y tips' }
+];
+
+// Añadir comandos de IA si están habilitados en el perfil
+const iaCommands = Object.keys(config.capabilities.commands || {})
+    .filter(cmd => config.capabilities.commands[cmd] === true)
+    .map(cmd => ({
+        command: cmd,
+        description: `IA: ${cmd.replace(/_/g, ' ')}`
+    }));
+
+bot.api.setMyCommands([...baseCommands, ...iaCommands]);
 
 // Middleware: Whitelist de usuarios (Seguridad Primero)
 bot.use(async (ctx, next) => {
@@ -57,6 +75,7 @@ async function showHelp(ctx: any) {
 • /audio voz - Activar respuestas con voz.
 • /audio texto - Responder solo con texto.
 • /audio off - Desactivar audio.
+• /sync - Actualizar la base de conocimientos desde Google Drive (Administrador).
 • /ayuda o /help - Ver esta lista de ayuda.
 
 <b>Tips:</b>
@@ -93,6 +112,35 @@ bot.command('audio', async (ctx) => {
     }
 });
 
+bot.command('sync', async (ctx) => {
+    const userId = ctx.from?.id;
+    if (!userId) return;
+
+    if (!config.GOOGLE_DRIVE_FOLDER_ID) {
+        return await ctx.reply('❌ No hay una carpeta de Google Drive configurada en esta instancia (GOOGLE_DRIVE_FOLDER_ID).');
+    }
+
+    const initialMsg = await ctx.reply('🔄 Iniciando sincronización de biblioteca con Google Drive...\n<i>Por favor espera, esto puede tardar un momento si hay archivos nuevos o grandes.</i>', { parse_mode: 'HTML' });
+    
+    // Función auxiliar para actualizar el mensaje de estado sin spam, solo lo actualiza cada 2.5s si es necesario
+    let lastUpdate = Date.now();
+    const updateProgress = async (msg: string) => {
+         if (Date.now() - lastUpdate > 2500) {
+              try {
+                  await ctx.api.editMessageText(ctx.chat.id, initialMsg.message_id, `🔄 <b>Sincronizando:</b>\n<i>${msg}</i>`, { parse_mode: 'HTML' });
+                  lastUpdate = Date.now();
+              } catch (e) { /* ignore */ }
+         }
+    };
+
+    try {
+        await syncLibrary(updateProgress);
+        await ctx.api.editMessageText(ctx.chat.id, initialMsg.message_id, '✅ <b>¡Sincronización completada!</b>\nLos documentos están listos para ser consultados.', { parse_mode: 'HTML' });
+    } catch (e: any) {
+        console.error('Error en /sync:', e);
+        await ctx.reply(`❌ <b>Error durante la sincronización:</b>\n${e.message}`, { parse_mode: 'HTML' });
+    }
+});
 
 
 // Manejador de documentos
@@ -283,9 +331,9 @@ bot.on('message:entities:bot_command', async (ctx, next) => {
     
     const cmdName = match[1].toLowerCase();
     
-    // Verificamos si es un comando controlado por capabilities
-    if (capabilities.commands && capabilities.commands[cmdName] !== undefined) {
-        if (capabilities.commands[cmdName] === true) {
+    // Verificamos si es un comando controlado por perfiles
+    if (config.capabilities.commands && config.capabilities.commands[cmdName] !== undefined) {
+        if (config.capabilities.commands[cmdName] === true) {
             await ctx.replyWithChatAction('typing');
             try {
                 const userId = ctx.from.id;

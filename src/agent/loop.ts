@@ -6,6 +6,8 @@ import { memory, Message } from '../memory/history.js';
 import '../tools/get_current_time.js';
 import '../tools/google.js';
 import '../tools/web.js';
+import '../tools/library.js';
+
 
 
 const MAX_ITERATIONS = 10; // límite de seguridad para evitar bucles infinitos
