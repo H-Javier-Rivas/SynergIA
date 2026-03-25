@@ -149,3 +149,18 @@ registerTool({
     return `Se enviaron a eliminar ${ids.length} correos (IDs: ${ids.join(', ')}).\nResultado:\n${deleteResult}`;
   }
 });
+
+registerTool({
+  name: 'gmail_get',
+  description: 'Obtiene el contenido detallado de un correo electrónico específico usando su ID.',
+  parameters: {
+    type: 'object',
+    properties: {
+      messageId: { type: 'string', description: 'El ID del mensaje de correo a recuperar.' }
+    },
+    required: ['messageId']
+  },
+  execute: async (args: { messageId: string }) => {
+    return await runGogCommand(`gmail get ${args.messageId} --json`);
+  }
+});

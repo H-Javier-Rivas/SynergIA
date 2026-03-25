@@ -6,6 +6,7 @@ import { generateSpeech } from '../agent/tts.js';
 import { extractTextFromPdf, extractTextFromDocx } from '../agent/document.js';
 import { syncLibrary } from '../agent/library.js';
 import { memory } from '../memory/history.js';
+import { executeWorkflowIfMatches } from '../agent/workflows.js';
 import fs from 'fs';
 import path from 'path';
 import { promisify } from 'util';
@@ -51,7 +52,15 @@ bot.use(async (ctx, next) => {
 
 // Comandos
 bot.command('start', async (ctx) => {
-    await ctx.reply(`¡Hola! Soy <b>${config.BOT_NAME}</b>, tu agente personal. ¿En qué te puedo ayudar hoy?`, { parse_mode: 'HTML' });
+    const userId = ctx.from?.id;
+    if (userId) {
+        await ctx.replyWithChatAction('typing');
+        const workflowResponse = await executeWorkflowIfMatches(userId, '/start');
+        if (workflowResponse) {
+            return await sendLongMessage(ctx, workflowResponse);
+        }
+    }
+    await ctx.reply(`¡Hola! Soy <b>${config.BOT_NAME}</b>, tu asistente inteligente. ¿En qué te puedo ayudar hoy?`, { parse_mode: 'HTML' });
 });
 
 bot.command('reset', async (ctx) => {

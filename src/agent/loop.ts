@@ -7,6 +7,7 @@ import '../tools/get_current_time.js';
 import '../tools/google.js';
 import '../tools/web.js';
 import '../tools/library.js';
+import '../tools/email.js';
 
 
 
