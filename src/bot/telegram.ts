@@ -10,7 +10,7 @@ import fs from 'fs';
 import path from 'path';
 import { promisify } from 'util';
 import { pipeline } from 'stream';
-
+const streamPipeline = promisify(pipeline);
 export const bot = new Bot(config.TELEGRAM_BOT_TOKEN);
 
 // Configurar menú de comandos en Telegram de forma dinámica
