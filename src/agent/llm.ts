@@ -103,12 +103,17 @@ async function fallbackGemini(messages: any[], tools: any[]) {
 }
 
 async function fallbackOpenRouter(messages: any[], tools: any[]) {
-    // Lista de modelos a probar en orden de estabilidad/capacidad
+    // Lista de modelos gratuitos de OpenRouter (actualizado: 2026-03-26)
+    // Ordenados de mayor a menor capacidad para maximizar calidad de respuesta
     const fallbackModels = [
-        config.OPENROUTER_MODEL,
-        "stepfun/step-3.5-flash:free",
-        "google/gemini-2.0-flash-lite-preview-02-05:free",
-        "meta-llama/llama-3.2-3b-instruct:free"
+        config.OPENROUTER_MODEL,                              // Modelo configurado en .env
+        "meta-llama/llama-3.3-70b-instruct:free",             // 70B - Muy capaz, 65k ctx
+        "qwen/qwen3-coder:free",                              // 480B MoE - Excelente para código, 262k ctx
+        "nvidia/nemotron-3-super-120b-a12b:free",             // 120B MoE - Buena calidad, 262k ctx
+        "google/gemma-3-27b-it:free",                         // 27B - Confiable, 131k ctx
+        "mistralai/mistral-small-3.1-24b-instruct:free",      // 24B - Rápido y estable, 128k ctx
+        "stepfun/step-3.5-flash:free",                        // Flash - Rápido, 256k ctx
+        "meta-llama/llama-3.2-3b-instruct:free"               // 3B - Ligero, último recurso, 131k ctx
     ].filter((m, i, self) => m && self.indexOf(m) === i); // Únicos
 
     const sanitizedHistory = messages.map(msg => {

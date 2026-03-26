@@ -283,19 +283,43 @@ bot.on(['message:voice', 'message:audio'], async (ctx) => {
 
 // Función auxiliar para forzar la limpieza de Markdown terco a HTML amigable para Telegram
 function formatForTelegramHtml(text: string): string {
-    let html = text;
+    // 1. Escapar caracteres básicos de HTML para evitar errores de parseo (Bad Request: can't parse entities)
+    let html = text
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
     
-    // Convertir Títulos Markdown a negrita HTML
-    html = html.replace(/^#{1,4}\s+(.*)$/gm, '<b>$1</b>');
-    
-    // Convertir Negritas Markdown a HTML
+    // 2. Restaurar/Convertir formato Markdown a HTML (que ahora será seguro)
+    // Negrita
     html = html.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>');
-    
-    // Convertir Tachado
+    // Tachado
     html = html.replace(/~~(.*?)~~/g, '<s>$1</s>');
-    
-    // Transformar listas Markdown (* o -) a viñetas seguras (•) para evitar fallos de itálicas
+    // Títulos
+    html = html.replace(/^#{1,6}\s+(.*)$/gm, '<b>$1</b>');
+    // Listas
     html = html.replace(/^\s*[\*-]\s+/gm, '• ');
+
+    // 3. Desenmascarar etiquetas HTML que el LLM pudiera haber enviado legítimamente
+    // Solo restauramos etiquetas si están cerradas correctamente para evitar el error "Can't find end tag"
+    const allowedTags = ['b', 'i', 'u', 's', 'code', 'pre'];
+    for (const tag of allowedTags) {
+        const regex = new RegExp(`&lt;(${tag})&gt;((?:(?!&lt;\\/${tag}&gt;).)*?)&lt;\\/${tag}&gt;`, 'gis');
+        html = html.replace(regex, `<$1>$2</$1>`);
+    }
+
+    // Caso especial para links
+    html = html.replace(/&lt;a\s+(.*?)&gt;((?:(?!&lt;\/a&gt;).)*?)&lt;\/a&gt;/gis, (match, attrs, content) => {
+        if (attrs.includes('href=')) {
+            const cleanAttrs = attrs.replace(/&quot;/g, '"').replace(/&amp;/g, '&');
+            return `<a ${cleanAttrs}>${content}</a>`;
+        }
+        return match;
+    });
+
+    // Caso especial para bloques de código markdown
+    html = html.replace(/```(?:(\w+)\n)?([\s\S]*?)```/g, (match, lang, code) => {
+        return `<pre><code>${code.trim()}</code></pre>`;
+    });
 
     return html;
 }
@@ -306,10 +330,17 @@ async function sendLongMessage(ctx: any, text: string) {
     const MAX_LENGTH = 4090;
     const opts = { parse_mode: 'HTML' as const };
     
+    // Si es corto, enviarlo directamente con manejo de errores
     if (formattedText.length <= MAX_LENGTH) {
-        return await ctx.reply(formattedText, opts);
+        try {
+            return await ctx.reply(formattedText, opts);
+        } catch (e: any) {
+            console.warn('Fallo al enviar mensaje HTML corto, reintentando como texto plano:', e.message);
+            return await ctx.reply(text);
+        }
     }
 
+    // Dividir el mensaje
     const chunks = [];
     let currentText = formattedText;
 
@@ -327,7 +358,15 @@ async function sendLongMessage(ctx: any, text: string) {
     }
 
     for (const chunk of chunks) {
-        await ctx.reply(chunk, opts);
+        try {
+            await ctx.api.sendMessage(ctx.chat.id, chunk, opts);
+        } catch (e: any) {
+            console.warn('Fallo al enviar chunk HTML, enviando versión limpia:', e.message);
+            // Si el chunk HTML falla (probablemente por una etiqueta abierta en el corte),
+            // enviamos una versión sin etiquetas HTML
+            const plainChunk = chunk.replace(/<[^>]*>/g, '');
+            await ctx.api.sendMessage(ctx.chat.id, plainChunk);
+        }
     }
 }
 

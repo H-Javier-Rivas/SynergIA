@@ -9,6 +9,7 @@ const instanceId = process.env.INSTANCE_ID || 'synergia';
 const envPath = path.resolve(process.cwd(), `.env${instanceId === 'synergia' ? '' : '.' + instanceId}`);
 if (fs.existsSync(envPath)) {
   dotenv.config({ path: envPath, quiet: true });
+  console.log(`[Config] Instance ID: ${instanceId}`);
   console.log(`[Config] Cargando variables de entorno desde: ${path.basename(envPath)}`);
 } else {
   dotenv.config({ quiet: true });
@@ -78,7 +79,7 @@ export const config: Config = {
   GEMINI_API_KEY: process.env.GEMINI_API_KEY,
 
   // Valores del Perfil
-  BOT_NAME: profile.name || 'SynergIA',
+  BOT_NAME: profile.name || process.env.BOT_NAME || 'SynergIA',
   SYSTEM_PROMPT: profile.system_prompt || '',
   KNOWLEDGE: knowledgeContent,
   GOOGLE_DRIVE_FOLDER_ID: profile.google_drive_folder_id,

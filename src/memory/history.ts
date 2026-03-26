@@ -11,15 +11,33 @@ export interface Message {
   created_at?: string;
 }
 
+// Preparar las sentencias SQL una sola vez al cargar el módulo
+const saveMessageStmt = db.prepare(`
+  INSERT INTO messages (user_id, role, content, tool_calls, tool_call_id)
+  VALUES (?, ?, ?, ?, ?)
+`);
+
+const getHistoryStmt = db.prepare(`
+  SELECT * FROM messages 
+  WHERE user_id = ? 
+  ORDER BY created_at DESC 
+  LIMIT ?
+`);
+
+const clearHistoryStmt = db.prepare(`DELETE FROM messages WHERE user_id = ?`);
+
+const getAudioModeStmt = db.prepare(`SELECT audio_mode FROM user_prefs WHERE user_id = ?`);
+
+const setAudioModeStmt = db.prepare(`
+  INSERT INTO user_prefs (user_id, audio_mode)
+  VALUES (?, ?)
+  ON CONFLICT(user_id) DO UPDATE SET audio_mode = excluded.audio_mode
+`);
+
 export const memory = {
   // Guardar un mensaje en la base de datos local y Firebase
   saveMessage: async (msg: Message) => {
-    const stmt = db.prepare(`
-      INSERT INTO messages (user_id, role, content, tool_calls, tool_call_id)
-      VALUES (?, ?, ?, ?, ?)
-    `);
-    
-    const result = stmt.run(
+    const result = saveMessageStmt.run(
       msg.user_id,
       msg.role,
       msg.content,
@@ -35,14 +53,7 @@ export const memory = {
 
   // Obtener el historial reciente de un usuario (últimos limit mensajes)
   getHistory: (user_id: number, limit: number = 20): Message[] => {
-    const stmt = db.prepare(`
-      SELECT * FROM messages 
-      WHERE user_id = ? 
-      ORDER BY created_at DESC 
-      LIMIT ?
-    `);
-    
-    const messages = stmt.all(user_id, limit) as Message[];
+    const messages = getHistoryStmt.all(user_id, limit) as Message[];
     
     return messages.reverse().map(msg => ({
       ...msg,
@@ -52,8 +63,7 @@ export const memory = {
 
   // Borrar el historial de un usuario (local y nube)
   clearHistory: async (user_id: number) => {
-    const stmt = db.prepare(`DELETE FROM messages WHERE user_id = ?`);
-    stmt.run(user_id);
+    clearHistoryStmt.run(user_id);
 
     // Borrado en la nube
     await firebaseMemory.clearHistory(user_id).catch(err => console.error("Firebase Sync Error:", err));
@@ -61,17 +71,11 @@ export const memory = {
 
   // Gestión de preferencias de audio persistentes (modo)
   getAudioMode: (user_id: number): string => {
-    const stmt = db.prepare(`SELECT audio_mode FROM user_prefs WHERE user_id = ?`);
-    const row = stmt.get(user_id) as { audio_mode: string } | undefined;
+    const row = getAudioModeStmt.get(user_id) as { audio_mode: string } | undefined;
     return row?.audio_mode ?? 'text';
   },
 
   setAudioMode: (user_id: number, mode: 'text' | 'voice' | 'off'): void => {
-    const stmt = db.prepare(`
-        INSERT INTO user_prefs (user_id, audio_mode)
-        VALUES (?, ?)
-        ON CONFLICT(user_id) DO UPDATE SET audio_mode = excluded.audio_mode
-    `);
-    stmt.run(user_id, mode);
+    setAudioModeStmt.run(user_id, mode);
   }
 };
