@@ -9,3 +9,6 @@ temp
 *.log
 docs/library/
 
+# Instaladores pesados
+src/assets/*.exe
+*.exe
