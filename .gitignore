@@ -9,6 +9,17 @@ temp
 *.log
 docs/library/
 
+# Archivos de prueba
+check-gemini-list.ts
+test*.ts
+test.bat
+
+# Documentos
+docs/ID y Secreto del cliente.txt
+docs/bibliografia.txt
+docs/prompt-inicial.txt
+docs/startup/
+
 # Instaladores pesados
 src/assets/*.exe
 *.exe
