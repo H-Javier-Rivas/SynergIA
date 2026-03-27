@@ -7,6 +7,15 @@ import { extractTextFromPdf, extractTextFromDocx } from '../agent/document.js';
 import { syncLibrary } from '../agent/library.js';
 import { memory } from '../memory/history.js';
 import { executeWorkflowIfMatches } from '../agent/workflows.js';
+import { 
+    getUserByTelegramId, 
+    createUser, 
+    getPlan, 
+    getAllPlans,
+    checkUserLimit,
+    incrementUsage,
+    updateLastInteraction
+} from '../memory/db.js';
 import fs from 'fs';
 import path from 'path';
 import { promisify } from 'util';
@@ -33,7 +42,7 @@ const iaCommands = Object.keys(config.capabilities.commands || {})
 
 bot.api.setMyCommands([...baseCommands, ...iaCommands]);
 
-// Middleware: Whitelist de usuarios (Seguridad Primero)
+// Middleware: Verificación de usuario (Multi-tenant)
 bot.use(async (ctx, next) => {
     const userId = ctx.from?.id;
 
@@ -42,9 +51,15 @@ bot.use(async (ctx, next) => {
         return;
     }
 
-    if (!config.TELEGRAM_ALLOWED_USER_IDS.includes(userId)) {
-        console.warn(`Mensaje ignorado: Usuario no autorizado (ID: ${userId}).`);
-        return;
+    // Verificar si el usuario existe en la DB
+    const user = getUserByTelegramId(userId);
+    
+    if (!user) {
+        console.log(`Nuevo usuario detected (ID: ${userId}), redirigiendo a registro...`);
+        // No bloqueamos, pero el comando /start mostrará el menú de registro
+    } else {
+        // Actualizar última interacción
+        updateLastInteraction(userId);
     }
 
     await next();
@@ -53,14 +68,126 @@ bot.use(async (ctx, next) => {
 // Comandos
 bot.command('start', async (ctx) => {
     const userId = ctx.from?.id;
-    if (userId) {
-        await ctx.replyWithChatAction('typing');
+    const userName = ctx.from?.first_name || ctx.from?.username || 'Usuario';
+    
+    if (!userId) return;
+
+    await ctx.replyWithChatAction('typing');
+
+    // Verificar si el usuario ya está registrado
+    const user = getUserByTelegramId(userId);
+
+    // Solo ejecutar workflow si el usuario ya está registrado
+    if (user) {
         const workflowResponse = await executeWorkflowIfMatches(userId, '/start');
         if (workflowResponse) {
             return await sendLongMessage(ctx, workflowResponse);
         }
     }
-    await ctx.reply(`¡Hola! Soy <b>${config.BOT_NAME}</b>, tu asistente inteligente. ¿En qué te puedo ayudar hoy?`, { parse_mode: 'HTML' });
+
+    if (user) {
+        // Usuario existente - mostrar bienvenida
+        const plan = getPlan(user.plan);
+        const limit = checkUserLimit(userId);
+        
+        let statusMsg = `¡Bienvenido de nuevo, <b>${userName}</b>! 👋`;
+        statusMsg += `\n\n📊 <b>Tu plan:</b> ${plan?.name || user.plan}`;
+        
+        if (limit.remaining > 0) {
+            statusMsg += `\n📨 <b>Mensajes restantes:</b> ${limit.remaining} este mes`;
+        } else if (limit.remaining === -1) {
+            statusMsg += `\n📨 <b>Mensajes:</b> Ilimitados`;
+        } else {
+            statusMsg += `\n⚠️ <b>Has alcanzado tu límite de mensajes.</b> Actualiza tu plan para continuar.`;
+        }
+        
+        statusMsg += `\n\n¿En qué puedo ayudarte hoy?`;
+        
+        return await ctx.reply(statusMsg, { parse_mode: 'HTML' });
+    }
+
+    // Usuario nuevo - mostrar menú de planes
+    const plans = getAllPlans();
+    
+    const planKeyboard = {
+        reply_markup: {
+            inline_keyboard: plans.map(plan => {
+                let label = '';
+                if (plan.monthly_requests === -1) {
+                    label = `👑 ${plan.name} (Ilimitado)`;
+                } else if (plan.price_monthly === 0) {
+                    label = `🆓 ${plan.name} (${plan.monthly_requests}/mes)`;
+                } else {
+                    label = `💎 ${plan.name} (${plan.monthly_requests}/mes - $${plan.price_monthly})`;
+                }
+                return [{ text: label, callback_data: `plan_${plan.id}` }];
+            })
+        }
+    };
+
+    const welcomeMessage = `
+¡Hola! 👋 Soy <b>${config.BOT_NAME}</b>, tu asistente inteligente.
+
+Para comenzar a usarme, selecciona uno de los siguientes planes:
+
+🆓 <b>Freemium</b> - Ideal para probar
+• ${plans.find(p => p.id === 'free')?.monthly_requests} mensajes al mes
+• Análisis de documentos
+
+💎 <b>Básico</b> - Para uso regular
+• ${plans.find(p => p.id === 'basic')?.monthly_requests} mensajes al mes
+• Análisis de documentos + Voz
+
+👑 <b>Premium</b> - Sin límites
+• Mensajes ilimitados
+• Todas las funcionalidades
+• Respuesta prioritaria
+
+<i>Selecciona un plan para comenzar:</i>
+`.trim();
+
+    await ctx.reply(welcomeMessage, { parse_mode: 'HTML', ...planKeyboard });
+});
+
+// Manejo de callbacks de selección de plan
+bot.callbackQuery(/plan_(.+)/, async (ctx) => {
+    const planId = ctx.match?.[1];
+    const userId = ctx.from?.id;
+    const userName = ctx.from?.first_name || ctx.from?.username || 'Usuario';
+    
+    if (!userId || !planId) {
+        return await ctx.answerCallbackQuery('Error al procesar la solicitud.');
+    }
+
+    const plan = getPlan(planId);
+    if (!plan) {
+        return await ctx.answerCallbackQuery('Plan no válido.');
+    }
+
+    // Crear usuario
+    createUser({
+        telegram_id: userId,
+        agent_id: process.env.INSTANCE_ID || 'synergia',
+        plan: planId,
+        status: 'active',
+        name: userName,
+        username: ctx.from?.username
+    });
+
+    await ctx.answerCallbackQuery(`¡Plan ${plan.name} activado!`);
+    
+    const welcomeMsg = `
+✅ <b>¡Bienvenido a ${config.BOT_NAME}, ${userName}!</b>
+
+📊 <b>Plan seleccionado:</b> ${plan.name}
+📨 <b>Mensajes mensuales:</b> ${plan.monthly_requests === -1 ? 'Ilimitados' : plan.monthly_requests}
+
+${plan.price_monthly > 0 ? `💰 <b>Precio:</b> $${plan.price_monthly}/mes` : '🆓 <b>Gratis</b>'}
+
+<i>¿En qué puedo ayudarte hoy?</i>
+`.trim();
+
+    await ctx.editMessageText(welcomeMsg, { parse_mode: 'HTML' });
 });
 
 bot.command('reset', async (ctx) => {
@@ -155,10 +282,23 @@ bot.command('sync', async (ctx) => {
 // Manejador de documentos
 bot.on('message:document', async (ctx) => {
     const userId = ctx.from.id;
+    
+    // Verificar usuario registrado
+    const user = getUserByTelegramId(userId);
+    if (!user) {
+        return await ctx.reply(`¡Hola! Para usar ${config.BOT_NAME}, primero necesitas registrarte.\n\nUsa /start para elegir un plan.`);
+    }
+    
+    const limit = checkUserLimit(userId);
+    if (!limit.allowed) {
+        const plan = getPlan(limit.plan);
+        return await ctx.reply(`⚠️ <b>Límite alcanzado</b>\n\nHas consumido todos los mensajes de tu plan ${plan?.name || limit.plan}.\n\nUsa /start para ver los planes disponibles.`, { parse_mode: 'HTML' });
+    }
+
     const document = ctx.message.document;
     const fileId = document.file_id;
     let fileName = document.file_name || 'documento_desconocido';
-    const caption = ctx.message.caption || ''; // Lo que el usuario escribió junto al documento
+    const caption = ctx.message.caption || '';
     
     const ext = fileName.split('.').pop()?.toLowerCase() || '';
 
@@ -166,6 +306,7 @@ bot.on('message:document', async (ctx) => {
         return ctx.reply('Lo siento, de momento solo puedo procesar archivos PDF y Word (.docx).');
     }
 
+    incrementUsage(user.id);
     await ctx.replyWithChatAction('typing');
 
     try {
@@ -232,6 +373,19 @@ bot.on('message:document', async (ctx) => {
 // Manejador de voz/audio
 bot.on(['message:voice', 'message:audio'], async (ctx) => {
     const userId = ctx.from.id;
+    
+    // Verificar usuario registrado
+    const user = getUserByTelegramId(userId);
+    if (!user) {
+        return await ctx.reply(`¡Hola! Para usar ${config.BOT_NAME}, primero necesitas registrarte.\n\nUsa /start para elegir un plan.`);
+    }
+    
+    const limit = checkUserLimit(userId);
+    if (!limit.allowed) {
+        const plan = getPlan(limit.plan);
+        return await ctx.reply(`⚠️ <b>Límite alcanzado</b>\n\nHas consumido todos los mensajes de tu plan ${plan?.name || limit.plan}.\n\nUsa /start para ver los planes disponibles.`, { parse_mode: 'HTML' });
+    }
+
     const file = await ctx.getFile();
     const filePath = file.file_path;
     
@@ -241,11 +395,11 @@ bot.on(['message:voice', 'message:audio'], async (ctx) => {
     if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir);
 
     let ext = filePath.split('.').pop() || 'ogg';
-    // Telegram usa .oga para mensajes de voz, pero Groq prefiere .ogg para reconocer el formato
     if (ext === 'oga') ext = 'ogg';
 
     const localPath = path.resolve(tempDir, `voice_${Date.now()}.${ext}`);
 
+    incrementUsage(user.id);
     await ctx.replyWithChatAction('typing');
 
     try {
@@ -324,25 +478,19 @@ function formatForTelegramHtml(text: string): string {
     return html;
 }
 
-// Función auxiliar para dividir mensajes largos
+// Función auxiliar para dividir mensajes largos (sin formato HTML)
 async function sendLongMessage(ctx: any, text: string) {
-    const formattedText = formatForTelegramHtml(text);
     const MAX_LENGTH = 4090;
-    const opts = { parse_mode: 'HTML' as const };
+    const opts = undefined; // Sin formato HTML - texto plano
     
-    // Si es corto, enviarlo directamente con manejo de errores
-    if (formattedText.length <= MAX_LENGTH) {
-        try {
-            return await ctx.reply(formattedText, opts);
-        } catch (e: any) {
-            console.warn('Fallo al enviar mensaje HTML corto, reintentando como texto plano:', e.message);
-            return await ctx.reply(text);
-        }
+    // Si es corto, enviarlo directamente
+    if (text.length <= MAX_LENGTH) {
+        return await ctx.reply(text, opts);
     }
 
     // Dividir el mensaje
     const chunks = [];
-    let currentText = formattedText;
+    let currentText = text;
 
     while (currentText.length > 0) {
         if (currentText.length <= MAX_LENGTH) {
@@ -358,15 +506,7 @@ async function sendLongMessage(ctx: any, text: string) {
     }
 
     for (const chunk of chunks) {
-        try {
-            await ctx.api.sendMessage(ctx.chat.id, chunk, opts);
-        } catch (e: any) {
-            console.warn('Fallo al enviar chunk HTML, enviando versión limpia:', e.message);
-            // Si el chunk HTML falla (probablemente por una etiqueta abierta en el corte),
-            // enviamos una versión sin etiquetas HTML
-            const plainChunk = chunk.replace(/<[^>]*>/g, '');
-            await ctx.api.sendMessage(ctx.chat.id, plainChunk);
-        }
+        await ctx.api.sendMessage(ctx.chat.id, chunk, opts);
     }
 }
 
@@ -382,9 +522,22 @@ bot.on('message:entities:bot_command', async (ctx, next) => {
     // Verificamos si es un comando controlado por perfiles
     if (config.capabilities.commands && config.capabilities.commands[cmdName] !== undefined) {
         if (config.capabilities.commands[cmdName] === true) {
+            const userId = ctx.from.id;
+            
+            // Verificar usuario registrado
+            const user = getUserByTelegramId(userId);
+            if (!user) {
+                return await ctx.reply(`¡Hola! Para usar ${config.BOT_NAME}, primero necesitas registrarte.\n\nUsa /start para elegir un plan.`);
+            }
+            
+            const limit = checkUserLimit(userId);
+            if (!limit.allowed) {
+                const plan = getPlan(limit.plan);
+                return await ctx.reply(`⚠️ <b>Límite alcanzado</b>\n\nHas consumido todos los mensajes de tu plan ${plan?.name || limit.plan}.\n\nUsa /start para ver los planes disponibles.`, { parse_mode: 'HTML' });
+            }
+            
             await ctx.replyWithChatAction('typing');
             try {
-                const userId = ctx.from.id;
                 const extraText = text.replace(`/${cmdName}`, '').trim();
                 const instruction = `[INSTRUCCIÓN INTERNA AL SISTEMA] El usuario ha invocado el comando "/${cmdName}". Tu tarea es ejecutar la acción correspondiente de manera elegante y narrativa, aplicando tu estilo profesional al contexto actual o al texto adjunto: "${extraText}". NO respondas con viñetas mecánicas ni enumeraciones markdown innecesarias, aplica un estilo fluido, descriptivo y académico.`;
                 
@@ -398,6 +551,8 @@ bot.on('message:entities:bot_command', async (ctx, next) => {
                         if (fs.existsSync(audioPath)) fs.unlinkSync(audioPath);
                     }
                 }
+                
+                incrementUsage(user.id);
             } catch (error: any) {
                 console.error(`Error procesando comando dinámico ${cmdName}:`, error);
                 await ctx.reply(`Error procesando comando: ${error.message}`);
@@ -416,6 +571,30 @@ bot.on('message:entities:bot_command', async (ctx, next) => {
 bot.on('message:text', async (ctx) => {
     const userId = ctx.from.id;
     const text = ctx.message.text;
+
+    // Verificar si el usuario está registrado
+    const user = getUserByTelegramId(userId);
+    
+    if (!user) {
+        // Redirigir a registro
+        return await ctx.reply(
+            `¡Hola! Para usar ${config.BOT_NAME}, primero necesitas registrarte.\n\nUsa el comando /start para elegir un plan y comenzar.`,
+            { parse_mode: 'HTML' }
+        );
+    }
+
+    // Verificar límite de uso
+    const limit = checkUserLimit(userId);
+    if (!limit.allowed) {
+        const plan = getPlan(limit.plan);
+        return await ctx.reply(
+            `⚠️ <b>Límite alcanzado</b>\n\nHas consumido todos los mensajes de tu plan ${plan?.name || limit.plan}.\n\n💎 <b>Upgrade tu plan</b> para continuar usando ${config.BOT_NAME} sin límites.\n\nUsa /start para ver los planes disponibles.`,
+            { parse_mode: 'HTML' }
+        );
+    }
+
+    // Incrementar contador de uso
+    incrementUsage(user.id);
 
     await ctx.replyWithChatAction('typing');
 

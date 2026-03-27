@@ -164,3 +164,127 @@ registerTool({
     return await runGogCommand(`gmail get ${args.messageId} --json`);
   }
 });
+
+registerTool({
+  name: 'tasks_list',
+  description: 'Lista las tareas de Google Tasks. Primero lista las listas disponibles, luego las tareas de la lista principal.',
+  parameters: {
+    type: 'object',
+    properties: {
+      max: { type: 'number', description: 'Número máximo de tareas a devolver. Por defecto 10.' }
+    },
+    required: []
+  },
+  execute: async (args: { max?: number }) => {
+    const max = args.max || 10;
+    // Obtener listas en JSON
+    const listsJson = await runGogCommand(`tasks lists --json`);
+    let tasklists: any[] = [];
+    try {
+      const parsed = JSON.parse(listsJson);
+      tasklists = parsed.tasklists || [];
+    } catch (e) {
+      return 'Error al obtener listas de tareas: ' + listsJson;
+    }
+    // Buscar primera lista que no sea "Recordatorios antiguos"
+    const mainList = tasklists.find((l: any) => !l.title?.includes('Recordatorios antiguos'));
+    if (!mainList) {
+      return 'No se encontró lista de tareas principal.';
+    }
+    // Obtener las tareas de esa lista
+    return await runGogCommand(`tasks list ${mainList.id} --max ${max}`);
+  }
+});
+
+registerTool({
+  name: 'tasks_create',
+  description: 'Crea una nueva tarea en Google Tasks.',
+  parameters: {
+    type: 'object',
+    properties: {
+      title: { type: 'string', description: 'Título de la tarea.' },
+      due: { type: 'string', description: 'Fecha de vencimiento en formato ISO (ej. "2023-10-25T14:00:00Z").' },
+      notes: { type: 'string', description: 'Notas o descripción de la tarea.' }
+    },
+    required: ['title']
+  },
+  execute: async (args: { title: string, due?: string, notes?: string }) => {
+    // Obtener lista principal con JSON
+    const listsJson = await runGogCommand(`tasks lists --json`);
+    let tasklists: any[] = [];
+    try {
+      const parsed = JSON.parse(listsJson);
+      tasklists = parsed.tasklists || [];
+    } catch (e) {
+      return 'Error al obtener listas de tareas.';
+    }
+    const mainList = tasklists.find((l: any) => !l.title?.includes('Recordatorios antiguos'));
+    if (!mainList) {
+      return 'No se encontró lista de tareas.';
+    }
+    const safeTitle = args.title.replace(/"/g, '\\"');
+    let cmd = `tasks add ${mainList.id} --title "${safeTitle}"`;
+    if (args.due) cmd += ` --due "${args.due}"`;
+    if (args.notes) {
+      const safeNotes = args.notes.replace(/"/g, '\\"');
+      cmd += ` --notes "${safeNotes}"`;
+    }
+    return await runGogCommand(cmd);
+  }
+});
+
+registerTool({
+  name: 'tasks_complete',
+  description: 'Marca una tarea como completada en Google Tasks.',
+  parameters: {
+    type: 'object',
+    properties: {
+      taskId: { type: 'string', description: 'ID de la tarea a completar.' }
+    },
+    required: ['taskId']
+  },
+  execute: async (args: { taskId: string }) => {
+    // Obtener lista principal con JSON
+    const listsJson = await runGogCommand(`tasks lists --json`);
+    let tasklists: any[] = [];
+    try {
+      const parsed = JSON.parse(listsJson);
+      tasklists = parsed.tasklists || [];
+    } catch (e) {
+      return 'Error al obtener listas de tareas.';
+    }
+    const mainList = tasklists.find((l: any) => !l.title?.includes('Recordatorios antiguos'));
+    if (!mainList) {
+      return 'No se encontró lista de tareas.';
+    }
+    return await runGogCommand(`tasks done ${mainList.id} ${args.taskId}`);
+  }
+});
+
+registerTool({
+  name: 'tasks_delete',
+  description: 'Elimina una tarea de Google Tasks.',
+  parameters: {
+    type: 'object',
+    properties: {
+      taskId: { type: 'string', description: 'ID de la tarea a eliminar.' }
+    },
+    required: ['taskId']
+  },
+  execute: async (args: { taskId: string }) => {
+    // Obtener lista principal con JSON
+    const listsJson = await runGogCommand(`tasks lists --json`);
+    let tasklists: any[] = [];
+    try {
+      const parsed = JSON.parse(listsJson);
+      tasklists = parsed.tasklists || [];
+    } catch (e) {
+      return 'Error al obtener listas de tareas.';
+    }
+    const mainList = tasklists.find((l: any) => !l.title?.includes('Recordatorios antiguos'));
+    if (!mainList) {
+      return 'No se encontró lista de tareas.';
+    }
+    return await runGogCommand(`tasks delete ${mainList.id} ${args.taskId}`);
+  }
+});
