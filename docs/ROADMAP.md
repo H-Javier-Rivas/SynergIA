@@ -1,7 +1,7 @@
 # 🧠 SynergIA — Hoja de Ruta del Proyecto
 
 > Documento de seguimiento de avances y próximas fases de desarrollo.
-> Actualizado: 2026-03-19
+> Actualizado: 2026-03-27
 
 ---
 
@@ -25,85 +25,150 @@
 
 ---
 
-## 🔄 Fase 2 — Estabilidad y despliegue en la nube (PRÓXIMA)
+## ✅ Fase 2 — Estabilidad y despliegue (COMPLETADA)
 
-### Objetivo principal
-Que SynergIA funcione **24/7 aunque la PC esté apagada**, desplegada en la nube con Railway.
-
-### Tareas pendientes
-
-- [ ] **Migrar la memoria de SQLite a Firebase Firestore completamente.**
-  - La base de datos local (`memory.db`) se perdería en cada redespliegue en la nube.
-  - Todo el historial debe vivir únicamente en Firestore.
-
-- [ ] **Subir el proyecto a GitHub** (repositorio privado).
-  - Asegurarse de que el `.gitignore` excluya el `.env` y credenciales.
-
-- [ ] **Desplegar en Railway.**
-  - Conectar Railway con el repositorio de GitHub.
-  - Configurar las variables de entorno del `.env` en el dashboard de Railway.
-  - Verificar que el bot inicia correctamente en producción.
-
-- [x] **Renovar el token OAuth de Gmail** (`gog.exe`).
-  - El token anterior había expirado.
-  - Se realizó la re-autorización mediante el flujo OAuth de Google.
+- [x] Refactorización de `src/config/index.ts` para configuraciones dinámicas por `INSTANCE_ID`.
+- [x] Aislamiento de bases de datos locales (`memory_${INSTANCE_ID}.db`).
+- [x] Plantilla PM2 para gestionar múltiples clientes.
+- [x] Perfiles de agente configurables (JSON).
+- [x] Sistema de capacidades por agente.
+- [x] Subir el proyecto a GitHub.
 
 ---
 
-## 🔮 Fase 3 — Arquitectura Multi-tenant y SaaS (EN PROCESO)
+## 🔄 Fase 3 — Base Multi-tenant (EN PROGRESO)
 
 ### Objetivo
-Permitir que el mismo código fuente ejecute múltiples "bots" independientes (clientes), cada uno con su propia configuración, base de datos local y tokens de API.
+Sistema de usuarios dinámico con planes de suscripción y cuotas de uso.
 
-### Diseño y Tareas
-- [x] Refactorización de `src/config/index.ts` para cargar configuraciones dinámicas basadas en `INSTANCE_ID`.
-- [x] Aislamiento de las rutas de bases de datos locales (ej. `memory_${INSTANCE_ID}.db`).
-- [x] Plantilla PM2 (`ecosystem.example.config.cjs`) para gestionar e iniciar múltiples clientes a la vez en el servidor.
-- [ ] Nuevo comando opcional `/clave [GROQ|GEMINI] [api_key]` para que un usuario pueda sobreescribir la llave del cliente con la suya propia.
+### Tareas
+
+- [ ] **Sistema de registro de usuarios**
+  - [ ] Comando `/start` interactivo con flujo de registro
+  - [ ] Tabla `users`: `id`, `telegram_id`, `agent_id`, `plan`, `created_at`, `status`
+
+- [ ] **Sistema de planes de suscripción**
+  - [ ] Tabla `plans`: `id`, `name`, `monthly_requests`, `features`, `price`
+  - [ ] Planes: Freemium, Básico, Premium
+
+- [ ] **Middleware de cuotas de uso**
+  - [ ] Tabla `usage`: `user_id`, `agent_id`, `requests_count`, `tokens_used`, `period`
+  - [ ] Verificación de plan antes de procesar mensaje
+  - [ ] Contador de requests incremented en cada interacción
+
+- [ ] **Flujo de onboarding**
+  - [ ] Menú de selección de plan
+  - [ ] Código de invitación opcional
+  - [ ] Bienvenida personalizada según plan
 
 ---
 
-## 💼 Fase 4 — Panel de Control y Monetización (FUTURA)
+## 🔄 Fase 4 — Aislamiento de Datos (PRÓXIMA)
 
 ### Objetivo
-Crear una plataforma administrativa ("Admin Dashboard") para gestionar clientes, configurar sus tokens y cobrar suscripciones por el uso del bot.
+Documentos privados por usuario en Google Drive.
 
-### Funcionalidades
-- **Frontend Admin**: Interfaz web (Angular/React/Vue o similar) para "Dar de alta" nuevos clientes visualmente.
-- **Gestor de Pagos**: Integración con pasarelas de pago (ej. Stripe) para cobrar mensualidades.
-- **Monitoreo**: Panel centralizado para ver el estado de salud, consumo de AI y uptime de cada instancia.
+### Tareas
+
+- [ ] **Estructura de carpetas privadas**
+  - [ ] Carpeta por usuario: `/SynergIA/{agent}/{user_id}/`
+  - [ ] Tabla `user_folders`: `user_id`, `drive_folder_id`, `agent_id`
+
+- [ ] **Herramienta de Drive personalizada**
+  - [ ] Tool que recibe `user_id` y retorna carpeta propia
+  - [ ] Sincronización individual por usuario
+
+- [ ] **Separación de historial**
+  - [ ] Queries con filtro `user_id` + `agent_id`
+  - [ ] Aislamiento completo de conversaciones
 
 ---
 
-## 🐳 Fase 5 — Dockerización y Orquestación (FUTURA)
+## 🔮 Fase 5 — Orquestación IA (FUTURA)
 
 ### Objetivo
-Escalar la infraestructura para soportar cientos de clientes simultáneamente de forma segura y portable.
+SynergIA como gateway de modelos IA para agentes especializados.
 
-### Funcionalidades
-- **Docker**: Crear un `Dockerfile` base para aislar las dependencias y procesos de SynergIA.
-- **Orquestación**: Utilizar `docker-compose` o plataformas como Kubernetes para levantar y apagar bots automáticamente.
-- [ ] **Pipelines CI/CD**: Despliegues automatizados que renueven los contenedores en producción sin afectar a los usuarios.
+### Tareas
+
+- [ ] **Pipeline de orquestación**
+  - [ ] Agente especializado → SynergIA (prompt optimizado) → Respuesta
+  - [ ] Sistema de formateo de respuestas por tipo de agente
+
+- [ ] **Gateway de modelos**
+  - [ ] SynergIA como centro de distribución de IA
+  - [ ] Groq, OpenRouter, Anthropic como proveedores
+  - [ ] Rate limits por agente/usuario
+
+- [ ] **Optimización de costos**
+  - [ ] Cache de respuestas para preguntas frecuentes
+  - [ ] Historial optimizado (truncar cuando sea necesario)
 
 ---
 
-## ☁️ Fase 6 — Arquitectura Serverless y Escalamiento Masivo (+1000 Clientes) (FUTURA)
+## 🔮 Fase 6 — SaaS Completo (FUTURA)
 
 ### Objetivo
-Migrar la infraestructura a un modelo Serverless (ej. Google Cloud Run, AWS Lambda) para eliminar los costos fijos de servidores inactivos y manejar picos masivos de mensajes de forma automática y elástica.
+Sistema completo de suscripción con facturación y métricas.
 
-### Funcionalidades
-- [ ] **Migración a Webhooks**: Reemplazar WebSockets/Long Polling por Webhooks de Telegram para invocar las funciones Serverless únicamente cuando llega un mensaje nuevo.
-- [ ] **Desacoplamiento de Base de Datos**: Reemplazar cualquier dependencia de archivos locales (como `memory.db` en SQLite) por bases de datos Cloud-Native (ej. Firestore, PostgreSQL, DynamoDB).
-- [ ] **Sistema de Colas (Message Queue)**: Implementar Google Cloud Tasks o Pub/Sub para gestionar picos de tráfico y evitar los límites de tasa (*rate limit*: HTTP 429) de las APIs de IA (Groq/Gemini).
-- [ ] **Configuración Totalmente Dinámica**: Cargar `API_KEYS` y configuración del tenant desde la base de datos o Secret Manager en milisegundos por cada mensaje, en lugar de archivos `.env`.
+### Tareas
+
+- [ ] **Panel de estadísticas**
+  - [ ] Usuarios por agente
+  - [ ] Requests por plan
+  - [ ] Revenue estimado
+
+- [ ] **Sistema de facturación**
+  - [ ] Integración con Stripe/PayPal
+  - [ ] O Telegram Bot Payments
+  - [ ] Registro manual de pagos
+
+- [ ] **Dashboard admin**
+  - [ ] Gestión visual de agentes
+  - [ ] Gestión de usuarios
+  - [ ] Configuración de planes
 
 ---
 
-## 💡 Ideas y notas adicionales
+## 🐳 Fase 7 — Dockerización y Escalamiento (FUTURA)
 
-- **Oracle Cloud Free Tier**: Alternativa gratuita para alojar en un VPS.
-- **Modo público**: Evaluar si el bot de algún cliente se abre al público (requiere cuotas estrictas).
+### Objetivo
+Escalar para soportar cientos de clientes.
+
+### Tareas
+
+- [ ] **Docker**: Crear `Dockerfile` base.
+- [ ] **Orquestación**: docker-compose o Kubernetes.
+- [ ] **CI/CD**: Pipelines de despliegue automatizado.
+
+---
+
+## ☁️ Fase 8 — Arquitectura Serverless (FUTURA)
+
+### Objetivo
+Migrar a modelo serverless para eliminar costos fijos.
+
+### Tareas
+
+- [ ] **Webhooks**: Reemplazar long-polling por webhooks de Telegram.
+- [ ] **DB Cloud-Native**: Firestore o PostgreSQL (Cloud SQL).
+- [ ] **Message Queue**: Cloud Tasks/Pub/Sub para picos de tráfico.
+- [ ] **Secret Manager**: Cargar API keys dinámicamente.
+
+---
+
+## 📋 Resumen de Fases
+
+| Fase | Nombre | Estado |
+|------|--------|--------|
+| 1 | Bot funcional local | ✅ Completada |
+| 2 | Estabilidad y despliegue | ✅ Completada |
+| 3 | Base Multi-tenant | 🔄 En progreso |
+| 4 | Aislamiento de Datos | ⏳ Próxima |
+| 5 | Orquestación IA | 🔮 Futura |
+| 6 | SaaS Completo | 🔮 Futura |
+| 7 | Dockerización | 🔮 Futura |
+| 8 | Serverless | 🔮 Futura |
 
 ---
 

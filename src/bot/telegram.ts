@@ -301,7 +301,7 @@ function formatForTelegramHtml(text: string): string {
 
     // 3. Desenmascarar etiquetas HTML que el LLM pudiera haber enviado legítimamente
     // Solo restauramos etiquetas si están cerradas correctamente para evitar el error "Can't find end tag"
-    const allowedTags = ['b', 'i', 'u', 's', 'code', 'pre'];
+    const allowedTags = ['b', 'i', 'u', 's', 'code', 'pre', 'ul', 'li', 'ol', 'br'];
     for (const tag of allowedTags) {
         const regex = new RegExp(`&lt;(${tag})&gt;((?:(?!&lt;\\/${tag}&gt;).)*?)&lt;\\/${tag}&gt;`, 'gis');
         html = html.replace(regex, `<$1>$2</$1>`);
