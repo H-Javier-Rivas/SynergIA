@@ -103,7 +103,7 @@ bot.command('start', async (ctx) => {
         
         statusMsg += `\n\n¿En qué puedo ayudarte hoy?`;
         
-        return await ctx.reply(statusMsg, { parse_mode: 'HTML' });
+        return await ctx.reply(statusMsg);
     }
 
     // Usuario nuevo - mostrar menú de planes
@@ -146,7 +146,7 @@ Para comenzar a usarme, selecciona uno de los siguientes planes:
 <i>Selecciona un plan para comenzar:</i>
 `.trim();
 
-    await ctx.reply(welcomeMessage, { parse_mode: 'HTML', ...planKeyboard });
+    await ctx.reply(welcomeMessage.replace(/<[^>]+>/g, ''), planKeyboard);
 });
 
 // Manejo de callbacks de selección de plan
@@ -187,7 +187,7 @@ ${plan.price_monthly > 0 ? `💰 <b>Precio:</b> $${plan.price_monthly}/mes` : '�
 <i>¿En qué puedo ayudarte hoy?</i>
 `.trim();
 
-    await ctx.editMessageText(welcomeMsg, { parse_mode: 'HTML' });
+    await ctx.editMessageText(cleanHtml(welcomeMsg));
 });
 
 bot.command('reset', async (ctx) => {
@@ -218,7 +218,7 @@ async function showHelp(ctx: any) {
 • Puedes enviarme PDFs o archivos Word para que los analice.
 • Puedes enviarme mensajes de voz y te responderé según tu configuración de /audio.`;
 
-    await ctx.reply(helpMessage, { parse_mode: 'HTML' });
+    await ctx.reply(helpMessage);
 }
 
 
@@ -231,18 +231,18 @@ bot.command('audio', async (ctx) => {
     if (!args) {
         const currentMode = memory.getAudioMode(userId);
         const modeDesc = currentMode === 'voice' ? '🎙️ Voz' : currentMode === 'text' ? '✍️ Texto' : '🔇 Desactivado';
-        return await ctx.reply(`🔊 Modo de audio actual: <b>${modeDesc}</b>\n\nUsa '/audio voz', '/audio texto' o '/audio off' para cambiarlo.`, { parse_mode: 'HTML' });
+        return await ctx.reply(`🔊 Modo de audio actual: <b>${modeDesc}</b>\n\nUsa '/audio voz', '/audio texto' o '/audio off' para cambiarlo.`);
     }
 
     if (args === 'voz' || args === 'voice') {
         memory.setAudioMode(userId, 'voice');
-        await ctx.reply('🎙️ Modo de audio configurado a: <b>Voz</b>. Ahora te responderé con mensajes de audio.', { parse_mode: 'HTML' });
+        await ctx.reply('🎙️ Modo de audio configurado a: <b>Voz</b>. Ahora te responderé con mensajes de audio.');
     } else if (args === 'texto' || args === 'text' || args === '--texto') {
         memory.setAudioMode(userId, 'text');
-        await ctx.reply('✍️ Modo de audio configurado a: <b>Texto</b>. Responderé solo con mensajes escritos.', { parse_mode: 'HTML' });
+        await ctx.reply('✍️ Modo de audio configurado a: <b>Texto</b>. Responderé solo con mensajes escritos.');
     } else if (args === 'off' || args === 'desactivar') {
         memory.setAudioMode(userId, 'off');
-        await ctx.reply('🔇 Modo de audio configurado a: <b>Desactivado</b>.', { parse_mode: 'HTML' });
+        await ctx.reply('🔇 Modo de audio configurado a: <b>Desactivado</b>.');
     } else {
         await ctx.reply("❌ Opción no válida. Usa 'voz', 'texto' o 'off'.");
     }
@@ -256,14 +256,14 @@ bot.command('sync', async (ctx) => {
         return await ctx.reply('❌ No hay una carpeta de Google Drive configurada en esta instancia (GOOGLE_DRIVE_FOLDER_ID).');
     }
 
-    const initialMsg = await ctx.reply('🔄 Iniciando sincronización de biblioteca con Google Drive...\n<i>Por favor espera, esto puede tardar un momento si hay archivos nuevos o grandes.</i>', { parse_mode: 'HTML' });
+    const initialMsg = await ctx.reply('🔄 Iniciando sincronización de biblioteca con Google Drive...\n<i>Por favor espera, esto puede tardar un momento si hay archivos nuevos o grandes.</i>');
     
     // Función auxiliar para actualizar el mensaje de estado sin spam, solo lo actualiza cada 2.5s si es necesario
     let lastUpdate = Date.now();
     const updateProgress = async (msg: string) => {
          if (Date.now() - lastUpdate > 2500) {
               try {
-                  await ctx.api.editMessageText(ctx.chat.id, initialMsg.message_id, `🔄 <b>Sincronizando:</b>\n<i>${msg}</i>`, { parse_mode: 'HTML' });
+                  await ctx.api.editMessageText(ctx.chat.id, initialMsg.message_id, `🔄 <b>Sincronizando:</b>\n<i>${msg}</i>`);
                   lastUpdate = Date.now();
               } catch (e) { /* ignore */ }
          }
@@ -271,10 +271,10 @@ bot.command('sync', async (ctx) => {
 
     try {
         await syncLibrary(updateProgress);
-        await ctx.api.editMessageText(ctx.chat.id, initialMsg.message_id, '✅ <b>¡Sincronización completada!</b>\nLos documentos están listos para ser consultados.', { parse_mode: 'HTML' });
+        await ctx.api.editMessageText(ctx.chat.id, initialMsg.message_id, '✅ <b>¡Sincronización completada!</b>\nLos documentos están listos para ser consultados.');
     } catch (e: any) {
         console.error('Error en /sync:', e);
-        await ctx.reply(`❌ <b>Error durante la sincronización:</b>\n${e.message}`, { parse_mode: 'HTML' });
+        await ctx.reply(`❌ <b>Error durante la sincronización:</b>\n${e.message}`);
     }
 });
 
@@ -292,7 +292,7 @@ bot.on('message:document', async (ctx) => {
     const limit = checkUserLimit(userId);
     if (!limit.allowed) {
         const plan = getPlan(limit.plan);
-        return await ctx.reply(`⚠️ <b>Límite alcanzado</b>\n\nHas consumido todos los mensajes de tu plan ${plan?.name || limit.plan}.\n\nUsa /start para ver los planes disponibles.`, { parse_mode: 'HTML' });
+        return await ctx.reply(`⚠️ <b>Límite alcanzado</b>\n\nHas consumido todos los mensajes de tu plan ${plan?.name || limit.plan}.\n\nUsa /start para ver los planes disponibles.`);
     }
 
     const document = ctx.message.document;
@@ -383,7 +383,7 @@ bot.on(['message:voice', 'message:audio'], async (ctx) => {
     const limit = checkUserLimit(userId);
     if (!limit.allowed) {
         const plan = getPlan(limit.plan);
-        return await ctx.reply(`⚠️ <b>Límite alcanzado</b>\n\nHas consumido todos los mensajes de tu plan ${plan?.name || limit.plan}.\n\nUsa /start para ver los planes disponibles.`, { parse_mode: 'HTML' });
+        return await ctx.reply(`⚠️ <b>Límite alcanzado</b>\n\nHas consumido todos los mensajes de tu plan ${plan?.name || limit.plan}.\n\nUsa /start para ver los planes disponibles.`);
     }
 
     const file = await ctx.getFile();
@@ -478,19 +478,51 @@ function formatForTelegramHtml(text: string): string {
     return html;
 }
 
-// Función auxiliar para dividir mensajes largos (sin formato HTML)
+// Función para limpiar HTML no permitido y mantener etiquetas seguras
+function cleanHtml(text: string): string {
+    // Primero escapamos caracteres危险
+    let html = text
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+    
+    // Lista blanca de etiquetas permitidas
+    const allowedTags = ['b', 'i', 'u', 's', 'strong', 'em', 'code', 'pre', 'br', 'p', 'ul', 'ol', 'li', 'a', 'blockquote'];
+    
+    // Restaurar etiquetas permitidas
+    for (const tag of allowedTags) {
+        const regex = new RegExp(`&lt;(${tag})&gt;((?:(?!&lt;\\/${tag}&gt;).)*?)&lt;\\/${tag}&gt;`, 'gis');
+        html = html.replace(regex, `<$1>$2</$1>`);
+    }
+    
+    // Permitir atributos en enlaces
+    html = html.replace(/&lt;a\s+(href=["\'][^"\']+["\'])\s*&gt;/gis, '<a $1>');
+    
+    // Eliminar cualquier otra etiqueta HTML que no esté en la lista blanca
+    html = html.replace(/&lt;\/?[a-z][a-z0-9]*([^>]*)&gt;/gi, '');
+    
+    return html;
+}
+
+// Función auxiliar para dividir mensajes largos
 async function sendLongMessage(ctx: any, text: string) {
     const MAX_LENGTH = 4090;
-    const opts = undefined; // Sin formato HTML - texto plano
+    const cleanText = cleanHtml(text);
+    const opts = { parse_mode: 'HTML' as const };
     
     // Si es corto, enviarlo directamente
-    if (text.length <= MAX_LENGTH) {
-        return await ctx.reply(text, opts);
+    if (cleanText.length <= MAX_LENGTH) {
+        try {
+            return await ctx.reply(cleanText, opts);
+        } catch (e: any) {
+            console.warn('Fallo HTML, enviando texto plano:', e.message);
+            return await ctx.reply(cleanText);
+        }
     }
 
     // Dividir el mensaje
     const chunks = [];
-    let currentText = text;
+    let currentText = cleanText;
 
     while (currentText.length > 0) {
         if (currentText.length <= MAX_LENGTH) {
@@ -506,7 +538,11 @@ async function sendLongMessage(ctx: any, text: string) {
     }
 
     for (const chunk of chunks) {
-        await ctx.api.sendMessage(ctx.chat.id, chunk, opts);
+        try {
+            await ctx.api.sendMessage(ctx.chat.id, chunk, opts);
+        } catch (e: any) {
+            await ctx.api.sendMessage(ctx.chat.id, chunk);
+        }
     }
 }
 
@@ -533,7 +569,7 @@ bot.on('message:entities:bot_command', async (ctx, next) => {
             const limit = checkUserLimit(userId);
             if (!limit.allowed) {
                 const plan = getPlan(limit.plan);
-                return await ctx.reply(`⚠️ <b>Límite alcanzado</b>\n\nHas consumido todos los mensajes de tu plan ${plan?.name || limit.plan}.\n\nUsa /start para ver los planes disponibles.`, { parse_mode: 'HTML' });
+                return await ctx.reply(`⚠️ <b>Límite alcanzado</b>\n\nHas consumido todos los mensajes de tu plan ${plan?.name || limit.plan}.\n\nUsa /start para ver los planes disponibles.`);
             }
             
             await ctx.replyWithChatAction('typing');
@@ -576,20 +612,16 @@ bot.on('message:text', async (ctx) => {
     const user = getUserByTelegramId(userId);
     
     if (!user) {
-        // Redirigir a registro
         return await ctx.reply(
-            `¡Hola! Para usar ${config.BOT_NAME}, primero necesitas registrarte.\n\nUsa el comando /start para elegir un plan y comenzar.`,
-            { parse_mode: 'HTML' }
+            `¡Hola! Para usar ${config.BOT_NAME}, primero necesitas registrarte. Usa el comando /start para elegir un plan y comenzar.`
         );
     }
 
-    // Verificar límite de uso
     const limit = checkUserLimit(userId);
     if (!limit.allowed) {
         const plan = getPlan(limit.plan);
         return await ctx.reply(
-            `⚠️ <b>Límite alcanzado</b>\n\nHas consumido todos los mensajes de tu plan ${plan?.name || limit.plan}.\n\n💎 <b>Upgrade tu plan</b> para continuar usando ${config.BOT_NAME} sin límites.\n\nUsa /start para ver los planes disponibles.`,
-            { parse_mode: 'HTML' }
+            `Limite alcanzado. Has consumido todos los mensajes de tu plan ${plan?.name || limit.plan}. Usa /start para ver los planes disponibles.`
         );
     }
 
