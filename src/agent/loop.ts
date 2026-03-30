@@ -8,6 +8,7 @@ import '../tools/google.js';
 import '../tools/web.js';
 import '../tools/library.js';
 import '../tools/email.js';
+import '../tools/admin.js';
 
 
 

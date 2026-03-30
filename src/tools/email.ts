@@ -1,4 +1,5 @@
 import { runGogCommand } from '../agent/library.js';
+import { registerTool } from './index.js';
 
 export const search_emails_tool = {
     name: 'search_emails',
@@ -74,3 +75,6 @@ export const get_email_tool = {
         }
     }
 };
+
+registerTool(search_emails_tool);
+registerTool(get_email_tool);

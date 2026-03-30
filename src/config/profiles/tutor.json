@@ -17,5 +17,21 @@
       "audio_response": true,
       "document_analysis": true
     }
+  },
+  "payment_methods": {
+    "pago_movil": {
+      "banco": "Banco de Venezuela o Banco Mercantil",
+      "telefono": "04268947660",
+      "cedula": "V-8033311"
+    },
+    "paypal": {
+      "email": "h.javier.rivas@gmail.com",
+      "note": "Por favor incluye un estimado por la comisión de PayPal."
+    },
+    "binance": {
+      "email": "h.javier.rivas@gmail.com",
+      "uid": " (UID) ",
+      "currency": "USDT"
+    }
   }
 }

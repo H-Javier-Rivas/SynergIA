@@ -6,7 +6,8 @@
     "commands": {
       "mejorar_redaccion": true,
       "corregir": true,
-      "resumir": true
+      "resumir": true,
+      "get_bots_summary": true
     },
     "features": {
       "audio_response": true,

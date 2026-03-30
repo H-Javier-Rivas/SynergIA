@@ -36,6 +36,22 @@ export interface Config {
     commands: { [key: string]: boolean };
     features: { [key: string]: boolean };
   };
+  payment_methods?: {
+    pago_movil?: {
+      banco: string;
+      telefono: string;
+      cedula: string;
+    };
+    paypal?: {
+      email: string;
+      note?: string;
+    };
+    binance?: {
+      email: string;
+      uid?: string;
+      currency: string;
+    };
+  };
 }
 
 // Cargar el perfil JSON
@@ -83,7 +99,8 @@ export const config: Config = {
   SYSTEM_PROMPT: profile.system_prompt || '',
   KNOWLEDGE: knowledgeContent,
   GOOGLE_DRIVE_FOLDER_ID: profile.google_drive_folder_id,
-  capabilities: profile.capabilities || { commands: {}, features: {} }
+  capabilities: profile.capabilities || { commands: {}, features: {} },
+  payment_methods: profile.payment_methods
 };
 
 if (config.TELEGRAM_ALLOWED_USER_IDS.length === 0) {

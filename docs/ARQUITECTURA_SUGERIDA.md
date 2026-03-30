@@ -59,4 +59,66 @@ Un solo bot que detecta el agente según el usuario.
 - Cada USUARIO se suscribe a UNO o VARIOS agentes según su necesidad
 
 ---
+
+## Sistema de Pagos y Registro
+
+### Flujo de Registro con Pago
+
+```
+1. Usuario nuevo -> /start
+2. Selecciona plan (Free/Básico/Premium)
+3. Si es FREE: registro inmediato
+4. Si es PAGO (Básico/Premium):
+   - Mostrar opciones de pago
+   - Usuario realiza el pago
+   - Usuario envía comprobante/referencia
+   - Admin verifica el pago
+   - Admin registra al usuario
+```
+
+### Métodos de Pago
+
+| Método | Datos a Mostrar |
+|--------|-----------------|
+| **Pago Móvil** | Teléfono 04268947660, C.I. V-8033311, Banco Mercantil (0105) | Monto del plan básico: 5 USD  Monto del plan premium: 10 USD
+| **PayPal.Me** | Plan Básico: https://paypal.me/negociosonline2023/10USD | Plan Premium: https://paypal.me/negociosonline2023/20USD
+| **USDT (Binance Pay)** | Monto del plan básico: 5 USD | Monto del plan premium: 10 USD
+
+### Mensaje de Pago (Propuesto)
+
+```
+💳 Pago para activar plan {PLAN_NAME}
+Para activar tu plan, realiza el pago de ${PRECIO}/mes:
+
+Opción 1 - Pago Móvil:
+• Teléfono: +58 426-894-7660
+• C.I.: V-8033311
+• Banco: Mercantil
+
+Opción 2 - PayPal:
+• PayPal.Me: https://paypal.me/negociosonline2023/
+
+Opción 3 - USDT (Binance Pay):
+• Binance ID: 762130981
+• Código QR: [ENLACE_QR]
+
+📎 Envía tu comprobante de pago + tu correo electrónico
+   Una vez verificado, recibirás un código de registro.
+```
+
+### Estructura de Suscripción en BD
+
+```sql
+subscriptions:
+  - user_id
+  - agent_id  
+  - plan_id
+  - payment_status (pending/paid/expired)
+  - payment_method
+  - payment_reference
+  - verified_at (cuando admin aprueba)
+  - expires_at
+```
+
+---
 *Responder con confirmación para proceder*

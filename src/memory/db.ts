@@ -37,6 +37,20 @@ export interface UserUsage {
   period_end: string;
 }
 
+export interface Subscription {
+  id: number;
+  user_id: number;
+  agent_id: string;
+  plan_id: string;
+  status: 'pending' | 'paid' | 'expired' | 'active';
+  payment_method?: string;
+  payment_reference?: string;
+  verified_at?: string;
+  expires_at?: string;
+  created_at: string;
+  updated_at: string;
+}
+
 // Inicializar esquemas
 export function initDB() {
   db.exec(`
@@ -97,8 +111,24 @@ export function initDB() {
       FOREIGN KEY (user_id) REFERENCES users(id)
     );
 
+    CREATE TABLE IF NOT EXISTS subscriptions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      agent_id TEXT NOT NULL,
+      plan_id TEXT NOT NULL,
+      status TEXT DEFAULT 'pending',
+      payment_method TEXT,
+      payment_reference TEXT,
+      verified_at DATETIME,
+      expires_at DATETIME,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(id)
+    );
+
     CREATE INDEX IF NOT EXISTS idx_users_telegram ON users(telegram_id);
     CREATE INDEX IF NOT EXISTS idx_users_agent ON users(agent_id);
+    CREATE INDEX IF NOT EXISTS idx_subscriptions_user ON subscriptions(user_id);
   `);
 
   // Insertar planes por defecto si no existen
@@ -227,33 +257,90 @@ export function incrementUsage(userId: number): void {
   }
 }
 
-export function checkUserLimit(telegramId: number): { allowed: boolean; remaining: number; plan: string } {
+export function checkUserLimit(telegramId: number): { allowed: boolean; remaining: number; plan: string; usagePercentage: number; nearLimit: boolean } {
   const user = getUserByTelegramId(telegramId);
   if (!user) {
-    return { allowed: false, remaining: 0, plan: 'none' };
+    return { allowed: false, remaining: 0, plan: 'none', usagePercentage: 0, nearLimit: false };
   }
   
   if (user.status !== 'active') {
-    return { allowed: false, remaining: 0, plan: user.plan };
+    return { allowed: false, remaining: 0, plan: user.plan, usagePercentage: 1, nearLimit: true };
   }
   
   const plan = getPlan(user.plan);
   if (!plan) {
-    return { allowed: false, remaining: 0, plan: user.plan };
+    return { allowed: false, remaining: 0, plan: user.plan, usagePercentage: 0, nearLimit: false };
   }
   
   // -1 significa ilimitado
   if (plan.monthly_requests === -1) {
-    return { allowed: true, remaining: -1, plan: user.plan };
+    return { allowed: true, remaining: -1, plan: user.plan, usagePercentage: 0, nearLimit: false };
   }
   
   const usage = getUserUsage(user.id);
   const used = usage?.requests_count || 0;
   const remaining = plan.monthly_requests - used;
+  const usagePercentage = used / plan.monthly_requests;
   
   return {
     allowed: remaining > 0,
     remaining: Math.max(0, remaining),
-    plan: user.plan
+    plan: user.plan,
+    usagePercentage,
+    nearLimit: usagePercentage >= 0.9
   };
+}
+
+// ============================================
+// Funciones para Suscripciones y Pagos
+// ============================================
+
+export function createPendingSubscription(subscription: Partial<Subscription>): Subscription {
+  const stmt = db.prepare(`
+    INSERT INTO subscriptions (user_id, agent_id, plan_id, status, payment_method, payment_reference)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `);
+  const result = stmt.run(
+    subscription.user_id,
+    subscription.agent_id,
+    subscription.plan_id,
+    'pending',
+    subscription.payment_method || null,
+    subscription.payment_reference || null
+  );
+  
+  const id = result.lastInsertRowid as number;
+  return db.prepare('SELECT * FROM subscriptions WHERE id = ?').get(id) as Subscription;
+}
+
+export function getSubscriptionById(id: number): Subscription | null {
+  return db.prepare('SELECT * FROM subscriptions WHERE id = ?').get(id) as Subscription | null;
+}
+
+export function getPendingSubscriptions(): Subscription[] {
+  return db.prepare('SELECT * FROM subscriptions WHERE status = "pending"').all() as Subscription[];
+}
+
+export function verifySubscription(id: number, adminId: number): void {
+  // 1. Obtener la suscripción
+  const sub = getSubscriptionById(id);
+  if (!sub) return;
+
+  // 2. Actualizar suscripción
+  const expiresAt = new Date();
+  expiresAt.setMonth(expiresAt.getMonth() + 1); // 1 mes de validez
+
+  db.prepare(`
+    UPDATE subscriptions 
+    SET status = 'paid', verified_at = CURRENT_TIMESTAMP, expires_at = ?, updated_at = CURRENT_TIMESTAMP 
+    WHERE id = ?
+  `).run(expiresAt.toISOString(), id);
+
+  // 3. Actualizar al usuario
+  db.prepare('UPDATE users SET plan = ?, status = "active", updated_at = CURRENT_TIMESTAMP WHERE id = ?')
+    .run(sub.plan_id, sub.user_id);
+}
+
+export function getUserSubscriptions(userId: number): Subscription[] {
+  return db.prepare('SELECT * FROM subscriptions WHERE user_id = ? ORDER BY created_at DESC').all(userId) as Subscription[];
 }
