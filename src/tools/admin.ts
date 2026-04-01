@@ -31,7 +31,7 @@ registerTool({
           const tempDB = new Database(dbPath, { readonly: true });
           
           // Obtener usuarios activos
-          const usersCount = (tempDB.prepare('SELECT COUNT(*) as count FROM users WHERE status = "active"').get() as any).count;
+          const usersCount = (tempDB.prepare(`SELECT COUNT(*) as count FROM users WHERE status = 'active'`).get() as any).count;
           
           // Obtener resumen de consumos
           const usageStats = tempDB.prepare(`
@@ -43,7 +43,7 @@ registerTool({
             FROM users u
             JOIN user_usage us ON u.id = us.user_id
             JOIN plans p ON u.plan = p.id
-            WHERE u.status = "active"
+            WHERE u.status = 'active'
             GROUP BY u.plan
           `).all() as any[];
 

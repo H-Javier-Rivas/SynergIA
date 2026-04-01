@@ -36,51 +36,31 @@
 
 ---
 
-## 🔄 Fase 3 — Base Multi-tenant (EN PROGRESO)
+## ✅ Fase 3 — Base Multi-tenant (COMPLETADA)
 
 ### Objetivo
 Sistema de usuarios dinámico con planes de suscripción y cuotas de uso.
 
-### Tareas
-
-- [ ] **Sistema de registro de usuarios**
-  - [ ] Comando `/start` interactivo con flujo de registro
-  - [ ] Tabla `users`: `id`, `telegram_id`, `agent_id`, `plan`, `created_at`, `status`
-
-- [ ] **Sistema de planes de suscripción**
-  - [ ] Tabla `plans`: `id`, `name`, `monthly_requests`, `features`, `price`
-  - [ ] Planes: Freemium, Básico, Premium
-
-- [ ] **Middleware de cuotas de uso**
-  - [ ] Tabla `usage`: `user_id`, `agent_id`, `requests_count`, `tokens_used`, `period`
-  - [ ] Verificación de plan antes de procesar mensaje
-  - [ ] Contador de requests incremented en cada interacción
-
-- [ ] **Flujo de onboarding**
-  - [ ] Menú de selección de plan
-  - [ ] Código de invitación opcional
-  - [ ] Bienvenida personalizada según plan
+### Tareas cumplidas
+- [x] **Sistema de registro de usuarios**: Comando `/start` interactivo con persistencia en tabla `users`.
+- [x] **Sistema de planes de suscripción**: Tabla `plans` con límites mensuales configurables (Freemium, Básico, Premium).
+- [x] **Middleware de cuotas de uso**: Verificación de límites en tiempo real y contador de mensual de requests.
+- [x] **Flujo de onboarding**: Menú de selección de plan y asignación automática de cuotas.
+- [x] **Monitoreo Administrativo**: Herramienta `get_bots_summary` para auditar salud y consumo de todas las instancias desde SynergIA.
+- [x] **Alertas de Consumo**: Notificaciones automáticas al usuario al alcanzar el 90% de su plan.
+- [x] **Documentación de Usuario**: Creación del primer Manual de Usuario de SynergIA como patrón para futuros bots.
 
 ---
 
-## 🔄 Fase 4 — Aislamiento de Datos (PRÓXIMA)
+## 🔄 Fase 4 — Aislamiento de Datos e Inteligencia Avanzada (EN PROGRESO)
 
 ### Objetivo
-Documentos privados por usuario en Google Drive.
+Documentos privados por usuario en Google Drive y mejora de precisión (RAG).
 
 ### Tareas
-
-- [ ] **Estructura de carpetas privadas**
-  - [ ] Carpeta por usuario: `/SynergIA/{agent}/{user_id}/`
-  - [ ] Tabla `user_folders`: `user_id`, `drive_folder_id`, `agent_id`
-
-- [ ] **Herramienta de Drive personalizada**
-  - [ ] Tool que recibe `user_id` y retorna carpeta propia
-  - [ ] Sincronización individual por usuario
-
-- [ ] **Separación de historial**
-  - [ ] Queries con filtro `user_id` + `agent_id`
-  - [ ] Aislamiento completo de conversaciones
+- [ ] **RAG de Alto Rendimiento (Especialización Tutor)**: Búsqueda vectorial para procesar bibliografía extensa.
+- [ ] **Estructura de carpetas privadas**: Carpeta por usuario en Drive autogestionada.
+- [ ] **Herramienta de Drive personalizada**: Sincronización individualizada para cada cliente.
 
 ---
 
@@ -159,11 +139,13 @@ Migrar a modelo serverless para eliminar costos fijos.
 
 ## 📋 Resumen de Fases
 
+## 📋 Resumen de Fases
+
 | Fase | Nombre | Estado |
 |------|--------|--------|
 | 1 | Bot funcional local | ✅ Completada |
 | 2 | Estabilidad y despliegue | ✅ Completada |
-| 3 | Base Multi-tenant | 🔄 En progreso |
+| 3 | Base Multi-tenant | ✅ Completada |
 | 4 | Aislamiento de Datos | ⏳ Próxima |
 | 5 | Orquestación IA | 🔮 Futura |
 | 6 | SaaS Completo | 🔮 Futura |

@@ -19,8 +19,26 @@ export function getAllTools(): Tool[] {
   return Array.from(toolsRegistry.values());
 }
 
+import { config } from '../config/index.js';
+
 export function getToolsDefinitions() {
-    return getAllTools().map(tool => ({
+    return getAllTools()
+      .filter(tool => {
+        // Permitir herramientas base siempre
+        if (['get_current_time', 'read_url'].includes(tool.name)) return true;
+        
+        // Si no está registrado en las capacidades (y no es base), lo deshabilitamos (opcional pero seguro)
+        if (config.capabilities && config.capabilities.commands) {
+            // Permitimos si está explícito, o si no hemos mapeado todo estrictamente, dejamos pasar
+            // Para ser estrictos:
+            // return !!config.capabilities.commands[tool.name]; 
+            // Pero como no hemos mapeado todo, omitimos el filtro estricto por ahora y confiamos en el system prompt.
+            // Para el admin tool, sí la restringimos solo al bot que la tenga activada:
+            if (tool.name === 'get_bots_summary') return !!config.capabilities.commands['get_bots_summary'];
+        }
+        return true;
+      })
+      .map(tool => ({
         type: 'function',
         function: {
             name: tool.name,

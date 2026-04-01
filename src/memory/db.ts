@@ -19,6 +19,7 @@ export interface User {
   created_at: string;
   updated_at: string;
   last_interaction?: string;
+  expires_at?: string;
 }
 
 export interface Plan {
@@ -33,6 +34,7 @@ export interface UserUsage {
   id: number;
   user_id: number;
   requests_count: number;
+  extra_requests: number;
   period_start: string;
   period_end: string;
 }
@@ -106,6 +108,7 @@ export function initDB() {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       user_id INTEGER NOT NULL,
       requests_count INTEGER DEFAULT 0,
+      extra_requests INTEGER DEFAULT 0,
       period_start DATETIME DEFAULT CURRENT_TIMESTAMP,
       period_end DATETIME,
       FOREIGN KEY (user_id) REFERENCES users(id)
@@ -137,9 +140,9 @@ export function initDB() {
     console.log('📦 Insertando planes por defecto...');
     db.exec(`
       INSERT INTO plans (id, name, monthly_requests, price_monthly, features) VALUES
-      ('free', 'Freemium', 50, 0, '{"docs": true, "voice": false}'),
-      ('basic', 'Básico', 500, 9.99, '{"docs": true, "voice": true}'),
-      ('premium', 'Premium', -1, 19.99, '{"docs": true, "voice": true, "priority": true}')
+      ('free', 'Freemium', 15, 0, '{"docs": true, "voice": false}'),
+      ('basic', 'Básico', 100, 4.99, '{"docs": true, "voice": true}'),
+      ('premium', 'Premium', 300, 9.99, '{"docs": true, "voice": true, "priority": true}')
     `);
   }
 
@@ -257,6 +260,14 @@ export function incrementUsage(userId: number): void {
   }
 }
 
+export function addExtraRequests(userId: number, amount: number): void {
+  const usage = getUserUsage(userId);
+  if (usage) {
+    const stmt = db.prepare('UPDATE user_usage SET extra_requests = extra_requests + ? WHERE id = ?');
+    stmt.run(amount, usage.id);
+  }
+}
+
 export function checkUserLimit(telegramId: number): { allowed: boolean; remaining: number; plan: string; usagePercentage: number; nearLimit: boolean } {
   const user = getUserByTelegramId(telegramId);
   if (!user) {
@@ -264,6 +275,10 @@ export function checkUserLimit(telegramId: number): { allowed: boolean; remainin
   }
   
   if (user.status !== 'active') {
+    return { allowed: false, remaining: 0, plan: user.plan, usagePercentage: 1, nearLimit: true };
+  }
+  
+  if (user.expires_at && new Date(user.expires_at) < new Date()) {
     return { allowed: false, remaining: 0, plan: user.plan, usagePercentage: 1, nearLimit: true };
   }
   
@@ -279,8 +294,11 @@ export function checkUserLimit(telegramId: number): { allowed: boolean; remainin
   
   const usage = getUserUsage(user.id);
   const used = usage?.requests_count || 0;
-  const remaining = plan.monthly_requests - used;
-  const usagePercentage = used / plan.monthly_requests;
+  const extra = usage?.extra_requests || 0;
+  
+  const totalAllowed = plan.monthly_requests + extra;
+  const remaining = totalAllowed - used;
+  const usagePercentage = used / totalAllowed;
   
   return {
     allowed: remaining > 0,

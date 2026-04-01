@@ -622,7 +622,7 @@ bot.on('message:text', async (ctx) => {
      try {
          let replyText = await processUserMessage(userId, text);
         if (warningPrefix) replyText = warningPrefix + replyText;
-+
+
          await sendLongMessage(ctx, replyText);
 
         if (memory.getAudioMode(userId) === 'voice') {
