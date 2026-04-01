@@ -139,8 +139,6 @@ Migrar a modelo serverless para eliminar costos fijos.
 
 ## 📋 Resumen de Fases
 
-## 📋 Resumen de Fases
-
 | Fase | Nombre | Estado |
 |------|--------|--------|
 | 1 | Bot funcional local | ✅ Completada |
