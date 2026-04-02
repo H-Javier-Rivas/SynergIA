@@ -225,6 +225,24 @@ export function updateLastInteraction(telegramId: number): void {
   stmt.run(telegramId);
 }
 
+export function deleteUserComplete(telegramId: number): void {
+  const user = getUserByTelegramId(telegramId);
+  if (!user) return;
+  db.exec('BEGIN TRANSACTION');
+  try {
+    db.prepare('DELETE FROM messages WHERE user_id = ?').run(user.id);
+    db.prepare('DELETE FROM user_prefs WHERE user_id = ?').run(user.id);
+    db.prepare('DELETE FROM subscriptions WHERE user_id = ?').run(user.id);
+    db.prepare('DELETE FROM user_usage WHERE user_id = ?').run(user.id);
+    db.prepare('DELETE FROM users WHERE id = ?').run(user.id);
+    db.exec('COMMIT');
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  }
+}
+
+
 export function getPlan(planId: string): Plan | null {
   const stmt = db.prepare('SELECT * FROM plans WHERE id = ?');
   return stmt.get(planId) as Plan | null;
@@ -256,6 +274,14 @@ export function incrementUsage(userId: number): void {
   } else {
     // Incrementar contador
     const stmt = db.prepare('UPDATE user_usage SET requests_count = requests_count + 1 WHERE id = ?');
+    stmt.run(usage.id);
+  }
+}
+
+export function decrementUsage(userId: number): void {
+  const usage = getUserUsage(userId);
+  if (usage && usage.requests_count > 0) {
+    const stmt = db.prepare('UPDATE user_usage SET requests_count = requests_count - 1 WHERE id = ?');
     stmt.run(usage.id);
   }
 }

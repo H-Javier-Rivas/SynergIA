@@ -14,6 +14,7 @@ import {
     getAllPlans,
     checkUserLimit,
     incrementUsage,
+    decrementUsage,
     updateLastInteraction,
     createPendingSubscription,
     getPendingSubscriptions,
@@ -22,7 +23,8 @@ import {
     updateUserPlan,
     updateUserStatus,
     getUserSubscriptions,
-    db
+    db,
+    deleteUserComplete
 } from '../memory/db.js';
 import fs from 'fs';
 import path from 'path';
@@ -106,7 +108,7 @@ bot.command('start', async (ctx) => {
         
         statusMsg += `\n\n¿En qué puedo ayudarte hoy?`;
         
-        return await ctx.reply(statusMsg);
+        return await ctx.reply(statusMsg, { parse_mode: 'HTML' });
     }
 
     const plans = getAllPlans();
@@ -187,7 +189,7 @@ bot.callbackQuery(/plan_(.+)/, async (ctx) => {
 <i>¿En qué puedo ayudarte hoy?</i>
 `.trim();
 
-        return await ctx.editMessageText(cleanHtml(welcomeMsg));
+        return await ctx.editMessageText(cleanHtml(welcomeMsg), { parse_mode: 'HTML' });
     }
 
     await ctx.answerCallbackQuery('Excelente elección. Procede al pago.');
@@ -230,13 +232,26 @@ bot.callbackQuery(/plan_(.+)/, async (ctx) => {
         status: 'pending'
     });
 
-    await ctx.editMessageText(cleanHtml(paymentMsg));
+    await ctx.editMessageText(cleanHtml(paymentMsg), { parse_mode: 'HTML' });
 });
 
 bot.command('reset', async (ctx) => {
     if (ctx.from) {
         await memory.clearHistory(ctx.from.id);
         await ctx.reply('✅ Historial borrado. Empecemos de nuevo.');
+    }
+});
+
+bot.command('hardreset', async (ctx) => {
+    if (ctx.from) {
+        try {
+            await memory.clearHistory(ctx.from.id);
+            deleteUserComplete(ctx.from.id);
+            await ctx.reply('⚠️ <b>HARD RESET COMPLETADO</b> ⚠️\n\nTu usuario, suscripción y consumo han sido eliminados de la base de datos de forma permanente.\n\nEscribe /start para iniciar el flujo de usuario nuevo.', { parse_mode: 'HTML' });
+        } catch (error) {
+            console.error('Error in hardreset:', error);
+            await ctx.reply('❌ Error al realizar el hard reset.');
+        }
     }
 });
 
@@ -575,7 +590,9 @@ bot.on('message:entities:bot_command', async (ctx, next) => {
                         if (fs.existsSync(audioPath)) fs.unlinkSync(audioPath);
                     }
                 }
-                incrementUsage(user.id);
+                if (!replyText.includes("Sin respuesta del modelo.") && !replyText.includes("Lo siento, alcancé el límite")) {
+                    incrementUsage(user.id);
+                }
             } catch (error: any) {
                 console.error(`Error procesando comando dinámico ${cmdName}:`, error);
                 await ctx.reply(`Error procesando comando: ${error.message}`);
@@ -619,9 +636,15 @@ bot.on('message:text', async (ctx) => {
         warningPrefix = `⚠️ <b>AVISO DE LÍMITE:</b> Has consumido el ${percentageFormatted}% de tu plan mensual. Te quedan ${limit.remaining} mensajes. Considera recargar pronto.\n\n`;
     }
 
+     let replyText = '';
      try {
-         let replyText = await processUserMessage(userId, text);
-        if (warningPrefix) replyText = warningPrefix + replyText;
+         replyText = await processUserMessage(userId, text);
+         
+         if (replyText.includes("Sin respuesta del modelo.") || replyText.includes("Lo siento, alcancé el límite")) {
+             decrementUsage(user.id);
+         }
+
+         if (warningPrefix) replyText = warningPrefix + replyText;
 
          await sendLongMessage(ctx, replyText);
 
@@ -633,6 +656,7 @@ bot.on('message:text', async (ctx) => {
             }
         }
     } catch (error: any) {
+        decrementUsage(user.id);
         console.error('Error al procesar mensaje:', error);
         await ctx.reply(`Error procesando solicitud: ${error.message}`);
     }

@@ -7,7 +7,9 @@
   "scripts": {
     "dev": "tsx watch --no-deprecation src/index.ts",
     "build": "tsc",
-    "start": "node --no-deprecation dist/index.js"
+    "start": "node --no-deprecation dist/index.js",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "keywords": [],
   "author": "",
@@ -30,6 +32,7 @@
     "@types/pdf-parse": "^1.1.5",
     "pm2": "^6.0.14",
     "tsx": "^4.21.0",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.2"
   }
 }

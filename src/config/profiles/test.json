@@ -1,0 +1,8 @@
+{
+  "name": "TestBot",
+  "system_prompt": "You are a test bot.",
+  "capabilities": {
+    "commands": {},
+    "features": {}
+  }
+}
