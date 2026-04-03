@@ -24,7 +24,8 @@ import {
     updateUserStatus,
     getUserSubscriptions,
     db,
-    deleteUserComplete
+    deleteUserComplete,
+    restoreUserComplete
 } from '../memory/db.js';
 import fs from 'fs';
 import path from 'path';
@@ -32,25 +33,6 @@ import { promisify } from 'util';
 import { pipeline } from 'stream';
 const streamPipeline = promisify(pipeline);
 export const bot = new Bot(config.TELEGRAM_BOT_TOKEN);
-
-// Configurar menú de comandos en Telegram de forma dinámica
-const baseCommands = [
-    { command: 'start', description: 'Iniciar y recibir saludo' },
-    { command: 'reset', description: 'Borrar historial' },
-    { command: 'audio', description: 'Configurar voz/texto' },
-    { command: 'sync', description: 'Sincronizar Drive' },
-    { command: 'ayuda', description: 'Ver ayuda y tips' }
-];
-
-// Añadir comandos de IA si están habilitados en el perfil
-const iaCommands = Object.keys(config.capabilities.commands || {})
-    .filter(cmd => config.capabilities.commands[cmd] === true)
-    .map(cmd => ({
-        command: cmd,
-        description: `IA: ${cmd.replace(/_/g, ' ')}`
-    }));
-
-bot.api.setMyCommands([...baseCommands, ...iaCommands]);
 
 // Middleware: Verificación de usuario (Multi-tenant)
 bot.use(async (ctx, next) => {
@@ -83,13 +65,6 @@ bot.command('start', async (ctx) => {
     await ctx.replyWithChatAction('typing');
 
     const user = getUserByTelegramId(userId);
-
-    if (user) {
-        const workflowResponse = await executeWorkflowIfMatches(userId, '/start');
-        if (workflowResponse) {
-            return await sendLongMessage(ctx, workflowResponse);
-        }
-    }
 
     if (user) {
         const plan = getPlan(user.plan);
@@ -255,6 +230,23 @@ bot.command('hardreset', async (ctx) => {
     }
 });
 
+bot.command('restore', async (ctx) => {
+    if (ctx.from) {
+        try {
+            const success = restoreUserComplete(ctx.from.id);
+            if (success) {
+                await memory.clearHistory(ctx.from.id); // Limpiar caché de memoria para forzar recarga desde DB
+                await ctx.reply('✅ <b>RESTAURACIÓN COMPLETADA</b> ✅\n\nTu perfil, historial de doctorado y configuración han sido restaurados desde el último respaldo.\n\nEscribe cualquier cosa para continuar donde lo dejaste.', { parse_mode: 'HTML' });
+            } else {
+                await ctx.reply('❌ No se encontró un respaldo válido o hubo un error en la restauración.');
+            }
+        } catch (error) {
+            console.error('Error in restore command:', error);
+            await ctx.reply('❌ Error técnico al intentar restaurar los datos.');
+        }
+    }
+});
+
 bot.command(['ayuda', 'help'], async (ctx) => await showHelp(ctx));
 bot.hears(/^\/\?$/, async (ctx) => await showHelp(ctx));
 
@@ -342,12 +334,14 @@ bot.command('pagos', async (ctx) => {
     }
 
     let msg = '📋 <b>Pagos Pendientes:</b>\n\n';
-    pending.forEach(sub => {
-        msg += `🆔 ID: <code>${sub.id}</code>\n👤 Usuario: ${sub.user_id}\n💎 Plan: ${sub.plan_id}\n🔗 Ref: ${sub.payment_reference || 'N/A'}\n\n`;
-    });
-    msg += 'Usa /verificar [ID] para aprobar.';
+    for (const sub of pending) {
+        const user = db.prepare('SELECT name, username FROM users WHERE id = ?').get(sub.user_id) as any;
+        const name = user?.name || user?.username || `ID:${sub.user_id}`;
+        msg += `🆔 Sub ID: <code>${sub.id}</code>\n👤 Usuario: <b>${name}</b>\n💎 Plan: ${sub.plan_id}\n🔗 Ref: <code>${sub.payment_reference || 'N/A'}</code>\n\n`;
+    }
+    msg += '-------------------\n✍️ Para aprobar: <code>/verificar [Sub ID]</code>';
 
-    await ctx.reply(msg);
+    await ctx.reply(msg, { parse_mode: 'HTML' });
 });
 
 bot.command('verificar', async (ctx) => {
@@ -358,22 +352,23 @@ bot.command('verificar', async (ctx) => {
     if (!subId) return await ctx.reply('Especifique el ID de la suscripción. Ej: /verificar 5');
 
     const sub = getSubscriptionById(subId);
-    if (!sub) return await ctx.reply('Suscripción no encontrada.');
+    if (!sub) return await ctx.reply('❌ Suscripción no encontrada.');
 
-    verifySubscription(subId, adminId);
-    
-    await ctx.reply(`✅ Suscripción #${subId} verificada correctamente.`);
-    
     try {
+        verifySubscription(subId, adminId);
+        await ctx.reply(`✅ Suscripción #${subId} verificada correctamente.`);
+
         const stmt = db.prepare('SELECT telegram_id FROM users WHERE id = ?');
         const internalUser = stmt.get(sub.user_id) as any;
         if (internalUser) {
-            await ctx.api.sendMessage(internalUser.telegram_id, `🎉 <b>¡Tu plan ${sub.plan_id} ha sido activado!</b>\nYa puedes empezar a usar todas las funcionalidades.`);
+            await ctx.api.sendMessage(internalUser.telegram_id, `🎉 <b>¡Tu plan ${sub.plan_id} ha sido activado!</b>\nYa puedes empezar a usar todas las funcionalidades.`, { parse_mode: 'HTML' });
         }
-    } catch (e) {
-        console.error('Error al notificar al usuario de la activación:', e);
+    } catch (e: any) {
+        console.error('Error during verification:', e);
+        await ctx.reply(`❌ <b>Error durante la verificación:</b>\n${e.message}`, { parse_mode: 'HTML' });
     }
 });
+
 
 bot.on('message:document', async (ctx) => {
     const userId = ctx.from.id;
@@ -448,6 +443,48 @@ bot.on('message:document', async (ctx) => {
         console.error('Error procesando documento:', error);
         await ctx.reply(`Error al procesar el documento: ${error.message}`);
     }
+});
+
+bot.on('message:photo', async (ctx) => {
+    const userId = ctx.from.id;
+    const user = getUserByTelegramId(userId);
+    if (!user) {
+        return await ctx.reply(`¡Hola! Para usar ${config.BOT_NAME}, primero necesitas registrarte.\n\nUsa /start para elegir un plan.`);
+    }
+
+    // 1. Detectar si el usuario está pendiente de pago
+    const pendingSub = getUserSubscriptions(user.id).find(s => s.status === 'pending');
+    
+    // Si tiene una suscripción pendiente, tratamos la foto como un comprobante de pago
+    if (pendingSub) {
+        const photo = ctx.message.photo.pop(); // El más grande
+        if (!photo) return;
+
+        const caption = ctx.message.caption || 'Captura de pantalla (Comprobante)';
+        
+        // Notificar a los administradores
+        const adminMsg = `📸 <b>NUEVO COMPROBANTE RECIBIDO (IMAGEN)</b>\n\n👤 Usuario: <b>${user.name || user.username || userId}</b> (ID: <code>${user.id}</code>)\n💎 Plan solicitado: <b>${pendingSub.plan_id}</b>\n\nUsa /verificar ${pendingSub.id} para aprobar tras revisar la imagen adjunta.`;
+
+        for (const adminId of config.TELEGRAM_ALLOWED_USER_IDS) {
+            try {
+                await ctx.api.sendPhoto(adminId, photo.file_id, { 
+                    caption: adminMsg, 
+                    parse_mode: 'HTML' 
+                });
+            } catch (e) {
+                console.error(`Error al enviar foto de pago al admin ${adminId}:`, e);
+            }
+        }
+
+        // Marcar en la base de datos que ya envió algo (opcional, pero útil)
+        db.prepare('UPDATE subscriptions SET payment_reference = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
+          .run('IMAGEN_ENVIADA', pendingSub.id);
+
+        return await ctx.reply('✅ <b>¡Comprobante recibido!</b>\nMi administrador ya ha recibido la imagen en su chat privado y validará tu pago pronto. ¡Muchas gracias!');
+    }
+
+    // Si NO está pendiente, de momento ignoramos la foto (o podrías añadir OCR/análisis luego)
+    await ctx.reply('Recibí tu foto. Por ahora solo puedo procesar texto y documentos PDF/Word para consultas, pero guardaré esto en mi memoria.');
 });
 
 bot.on(['message:voice', 'message:audio'], async (ctx) => {
@@ -560,11 +597,11 @@ bot.on('message:entities:bot_command', async (ctx, next) => {
     if (!match) return next();
     
     const cmdName = match[1].toLowerCase();
-    
+    const userId = ctx.from.id;
+    const user = getUserByTelegramId(userId);
+
     if (config.capabilities.commands && config.capabilities.commands[cmdName] !== undefined) {
         if (config.capabilities.commands[cmdName] === true) {
-            const userId = ctx.from.id;
-            const user = getUserByTelegramId(userId);
             if (!user) {
                 return await ctx.reply(`¡Hola! Para usar ${config.BOT_NAME}, primero necesitas registrarte.\n\nUsa /start para elegir un plan.`);
             }
@@ -595,12 +632,29 @@ bot.on('message:entities:bot_command', async (ctx, next) => {
                 }
             } catch (error: any) {
                 console.error(`Error procesando comando dinámico ${cmdName}:`, error);
-                await ctx.reply(`Error procesando comando: ${error.message}`);
+                if (error.message.includes('servidores')) {
+                    await ctx.reply(`⚠️ ${error.message}`);
+                } else {
+                    await ctx.reply(`❌ Error procesando comando: ${error.message}`);
+                }
             }
         } else {
+            // Verificar si es un comando de Workflow
+            const workflowResponse = await executeWorkflowIfMatches(userId, text);
+            if (workflowResponse) {
+                return await sendLongMessage(ctx, workflowResponse);
+            }
+            
             await ctx.reply('🔒 Este comando no está habilitado en mi configuración actual (plan/versión).');
         }
     } else {
+        // También verificar workflows para comandos no definidos en capabilities
+        const workflowResponse = await executeWorkflowIfMatches(userId, text);
+        if (workflowResponse) {
+            return await sendLongMessage(ctx, workflowResponse);
+        }
+
+
         await ctx.reply('Comando no reconocido. Escribe /ayuda para ver mis opciones.');
     }
 });
@@ -624,7 +678,19 @@ bot.on('message:text', async (ctx) => {
     const pendingSub = getUserSubscriptions(user.id).find(s => s.status === 'pending');
     if (pendingSub && text.length < 50 && /^[0-9A-Z]+$/.test(text.toUpperCase())) {
          db.prepare('UPDATE subscriptions SET payment_reference = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(text, pendingSub.id);
-         return await ctx.reply('✅ <b>Gracias por enviar tu comprobante/referencia.</b>\nUn administrador verificará el pago a la brevedad.');
+         
+         // Notificar a los administradores
+         const adminMsg = `💰 <b>Nueva Referencia de Pago</b>\n\n👤 Usuario: <b>${user.name || user.username || userId}</b> (ID: <code>${user.id}</code>)\n💎 Plan: <b>${pendingSub.plan_id}</b>\n🔗 Referencia: <code>${text.toUpperCase()}</code>\n\nUsa /pagos para ver la lista completa o /verificar ${pendingSub.id} para aprobar.`;
+         
+         for (const adminId of config.TELEGRAM_ALLOWED_USER_IDS) {
+             try {
+                 await ctx.api.sendMessage(adminId, adminMsg, { parse_mode: 'HTML' });
+             } catch (e) {
+                 console.error(`Error al notificar pago al administrador ${adminId}:`, e);
+             }
+         }
+
+         return await ctx.reply('✅ <b>Gracias por enviar tu comprobante/referencia.</b>\nMi administrador ya ha sido notificado y verificará el pago a la brevedad.');
     }
 
     incrementUsage(user.id);
@@ -658,6 +724,70 @@ bot.on('message:text', async (ctx) => {
     } catch (error: any) {
         decrementUsage(user.id);
         console.error('Error al procesar mensaje:', error);
-        await ctx.reply(`Error procesando solicitud: ${error.message}`);
+        if (error.message.includes('servidores')) {
+            await ctx.reply(`⚠️ ${error.message}`);
+        } else {
+                await ctx.reply(`❌ Error procesando solicitud: ${error.message}`);
+        }
     }
 });
+
+async function registerCommands() {
+    try {
+        // 1. Comandos para TODOS los usuarios
+        const publicCommands = [
+            { command: 'start', description: '🚀 Iniciar / Ver mi plan' },
+            { command: 'reset', description: '🧹 Limpiar la memoria del chat' },
+            { command: 'audio', description: '🎙️ Configura Voz/Texto' },
+            { command: 'ayuda', description: '❓ Ayuda y Capacidades' }
+        ];
+
+        // 2. Comandos de IA dinámicos (basados en capabilities)
+        const aiCommands = Object.keys(config.capabilities.commands || {})
+            .filter(cmd => config.capabilities.commands[cmd] === true)
+            .map(cmd => ({
+                command: cmd,
+                description: `🪄 ${cmd.replace(/_/g, ' ')}`
+            }));
+
+        // 3. Comandos SOLO para ADMINISTRADORES
+        const adminCommands = [
+            ...publicCommands,
+            ...aiCommands,
+            { command: 'agenda', description: '📅 Mi Agenda (Mail y Calendario)' },
+            { command: 'pagos', description: '💰 Ver pagos pendientes' },
+            { command: 'verificar', description: '✅ Verificar un pago' },
+            { command: 'sync', description: '🔄 Sincronizar Knowledge' }
+        ];
+
+        // Borrar comandos previos
+        await bot.api.deleteMyCommands();
+
+        // Aplicar comandos públicos por defecto
+        await bot.api.setMyCommands([...publicCommands, ...aiCommands]);
+        console.log('✅ Comandos públicos registrados.');
+
+        // Aplicar menú extendido para cada administrador
+        for (const adminId of config.TELEGRAM_ALLOWED_USER_IDS) {
+            try {
+                await bot.api.setMyCommands(adminCommands, {
+                    scope: { type: 'chat', chat_id: adminId }
+                });
+                console.log(`✅ Menú de administrador configurado para: ${adminId}`);
+            } catch (e) {
+                console.error(`Error configurando menú admin para ${adminId}:`, e);
+            }
+        }
+
+    } catch (e) {
+        console.error('Error al registrar comandos:', e);
+    }
+}
+
+bot.start({
+    onStart: (botInfo) => {
+        console.log(`🤖 @${botInfo.username} en línea.`);
+        registerCommands();
+    }
+});
+

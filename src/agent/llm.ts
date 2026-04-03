@@ -16,42 +16,55 @@ const genAI = config.GEMINI_API_KEY ? new GoogleGenerativeAI(config.GEMINI_API_K
 const openRouterEndpoint = 'https://openrouter.ai/api/v1/chat/completions';
 
 export async function chatCompletion(messages: any[], tools: any[] = []) {
-  try {
-    // Intentar primero con Groq (modelo gratis y muy rápido)
-    const response = await groq.chat.completions.create({
-      model: 'llama-3.3-70b-versatile', 
-      messages,
-      tools: tools.length > 0 ? tools : undefined,
-      tool_choice: tools.length > 0 ? 'auto' : undefined,
-    });
-    
-    return response.choices[0].message;
-  } catch (error: any) {
-    // Si recibimos un 403 (Access Denied), es probable que sea un bloqueo regional o de red de Groq
-    if (error?.status === 403 || error?.message?.includes('403')) {
-        console.warn('Groq detectó un error de acceso (403). Bloqueo regional detectado.');
-    } else {
-        console.error('Groq Error:', error?.message || error);
-    }
-    
-    // Fallback 1: OpenRouter
-    if (config.OPENROUTER_API_KEY && config.OPENROUTER_API_KEY !== "SUTITUYE POR EL TUYO") {
-      try {
-        console.log('Intentando fallback a OpenRouter...');
-        return await fallbackOpenRouter(messages, tools);
-      } catch (orError) {
-        console.error('Fallback de OpenRouter falló:', orError);
+  const maxRetries = 1;
+  let attempt = 0;
+
+  while (attempt <= maxRetries) {
+    try {
+      // Intentar primero con Groq
+      const response = await groq.chat.completions.create({
+        model: 'llama-3.3-70b-versatile', 
+        messages,
+        tools: tools.length > 0 ? tools : undefined,
+        tool_choice: tools.length > 0 ? 'auto' : undefined,
+      });
+      
+      const msg = response.choices[0].message;
+      if (msg.content || (msg.tool_calls && msg.tool_calls.length > 0)) {
+        return msg;
+      }
+      
+      throw new Error("Empty response");
+    } catch (error: any) {
+      // Fallback 1: OpenRouter
+      if (config.OPENROUTER_API_KEY && config.OPENROUTER_API_KEY !== "SUTITUYE POR EL TUYO") {
+        try {
+          console.log('Intentando fallback a OpenRouter...');
+          return await fallbackOpenRouter(messages, tools);
+        } catch (orError) {
+          console.error('Fallback de OpenRouter falló:', orError);
+        }
+      }
+
+      // Fallback 2: Gemini
+      if (genAI) {
+          try {
+              console.log('Intentando fallback final a Gemini...');
+              return await fallbackGemini(messages, tools);
+          } catch (gemError) {
+              console.error('Fallback de Gemini falló:', gemError);
+          }
+      }
+
+      attempt++;
+      if (attempt <= maxRetries) {
+        console.warn(`⚠️ Intento ${attempt} fallido. Reintentando en 1.5s...`);
+        await new Promise(resolve => setTimeout(resolve, 1500));
       }
     }
-
-    // Fallback 2: Gemini (El salvavidas definitivo)
-    if (genAI) {
-        console.log('Intentando fallback final a Gemini 1.5 Flash...');
-        return await fallbackGemini(messages, tools);
-    }
-    
-    throw new Error('Fallo la llamada al LLM (Groq, OpenRouter y Gemini no disponibles o fallaron).');
   }
+  
+  throw new Error('Nuestros servidores están experimentando una alta demanda en este momento. Por favor, intenta enviar tu mensaje nuevamente en unos segundos.');
 }
 
 async function fallbackGemini(messages: any[], tools: any[]) {

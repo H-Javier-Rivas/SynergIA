@@ -96,7 +96,10 @@ export async function processUserMessage(userId: number, text: string): Promise<
             // Continuar al siguiente ciclo del bucle while para que el agente vea el resultado de la herramienta
         } else {
             // Respuesta final completada
-            return responseMessage.content || "Sin respuesta del modelo.";
+            if (!responseMessage.content) {
+                 throw new Error("Empty response content from all providers.");
+            }
+            return responseMessage.content;
         }
     }
     

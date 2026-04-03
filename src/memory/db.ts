@@ -1,5 +1,6 @@
 import Database from 'better-sqlite3';
 import { config } from '../config/index.js';
+import fs from 'fs';
 
 // Inicializar la base de datos
 export const db = new Database(config.DB_PATH);
@@ -242,6 +243,86 @@ export function deleteUserComplete(telegramId: number): void {
   }
 }
 
+export function restoreUserComplete(telegramId: number): boolean {
+  try {
+    const backupPath = `${config.DB_PATH}.backup`;
+    const backupExists = fs.existsSync(backupPath);
+    if (!backupExists) return false;
+
+    // 1. Limpiar rastro actual (si existe)
+    deleteUserComplete(telegramId);
+
+    // 2. Adjuntar backup y restaurar
+    db.exec(`ATTACH DATABASE '${backupPath}' AS backup`);
+    db.exec('BEGIN TRANSACTION');
+
+    try {
+      // Usuarios
+      db.prepare(`
+        INSERT INTO main.users (id, telegram_id, agent_id, plan, status, name, username, created_at, updated_at, last_interaction)
+        SELECT id, telegram_id, agent_id, plan, status, name, username, created_at, updated_at, last_interaction
+        FROM backup.users WHERE telegram_id = ?
+      `).run(telegramId);
+
+      const userFromBackup = db.prepare("SELECT id, telegram_id FROM backup.users WHERE telegram_id = ?").get(telegramId) as any;
+      if (!userFromBackup) throw new Error("User not in backup");
+      
+      const backupInternalId = userFromBackup.id;
+      const telegramIdNum = userFromBackup.telegram_id;
+
+      // Al restaurar, el nuevo ID en main será el que acabamos de insertar (que debería ser backupInternalId si estaba libre)
+      const newUser = getUserByTelegramId(telegramId);
+      if (!newUser) throw new Error("Could not find newly created user");
+      const newInternalId = newUser.id;
+
+      // Mensajes: Buscamos si los mensajes en el backup están bajo el ID interno o bajo el telegram_id
+      const checkMsgsId = db.prepare("SELECT COUNT(*) as c FROM backup.messages WHERE user_id = ?").get(backupInternalId) as any;
+      const checkMsgsTg = db.prepare("SELECT COUNT(*) as c FROM backup.messages WHERE user_id = ?").get(telegramIdNum) as any;
+      
+      const sourceIdForMsgs = (checkMsgsId.c >= checkMsgsTg.c) ? backupInternalId : telegramIdNum;
+
+      db.prepare(`
+        INSERT INTO main.messages (user_id, role, content, tool_calls, tool_call_id, created_at)
+        SELECT ?, role, content, tool_calls, tool_call_id, created_at
+        FROM backup.messages WHERE user_id = ?
+      `).run(newInternalId, sourceIdForMsgs);
+
+      // Usage
+      const sourceIdForUsage = (db.prepare("SELECT COUNT(*) as c FROM backup.user_usage WHERE user_id = ?").get(backupInternalId) as any).c >= 
+                               (db.prepare("SELECT COUNT(*) as c FROM backup.user_usage WHERE user_id = ?").get(telegramIdNum) as any).c 
+                               ? backupInternalId : telegramIdNum;
+
+      db.prepare(`
+        INSERT INTO main.user_usage (user_id, requests_count, period_start, period_end)
+        SELECT ?, requests_count, period_start, period_end
+        FROM backup.user_usage WHERE user_id = ?
+      `).run(newInternalId, sourceIdForUsage);
+
+      // Prefs
+      const sourceIdForPrefs = (db.prepare("SELECT COUNT(*) as c FROM backup.user_prefs WHERE user_id = ?").get(backupInternalId) as any).c >= 
+                               (db.prepare("SELECT COUNT(*) as c FROM backup.user_prefs WHERE user_id = ?").get(telegramIdNum) as any).c 
+                               ? backupInternalId : telegramIdNum;
+
+      db.prepare(`
+        INSERT INTO main.user_prefs (user_id, audio_mode)
+        SELECT ?, audio_mode
+        FROM backup.user_prefs WHERE user_id = ?
+      `).run(newInternalId, sourceIdForPrefs);
+
+      db.exec('COMMIT');
+    } catch (e) {
+      db.exec('ROLLBACK');
+      throw e;
+    } finally {
+      db.exec("DETACH DATABASE backup");
+    }
+    return true;
+  } catch (error) {
+    console.error('Error in restoreUserComplete:', error);
+    return false;
+  }
+}
+
 
 export function getPlan(planId: string): Plan | null {
   const stmt = db.prepare('SELECT * FROM plans WHERE id = ?');
@@ -374,14 +455,11 @@ export function verifySubscription(id: number, adminId: number): void {
   const expiresAt = new Date();
   expiresAt.setMonth(expiresAt.getMonth() + 1); // 1 mes de validez
 
-  db.prepare(`
-    UPDATE subscriptions 
-    SET status = 'paid', verified_at = CURRENT_TIMESTAMP, expires_at = ?, updated_at = CURRENT_TIMESTAMP 
-    WHERE id = ?
-  `).run(expiresAt.toISOString(), id);
+  db.prepare("UPDATE subscriptions SET status = 'paid', verified_at = CURRENT_TIMESTAMP, expires_at = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?")
+    .run(expiresAt.toISOString(), id);
 
   // 3. Actualizar al usuario
-  db.prepare('UPDATE users SET plan = ?, status = "active", updated_at = CURRENT_TIMESTAMP WHERE id = ?')
+  db.prepare("UPDATE users SET plan = ?, status = 'active', updated_at = CURRENT_TIMESTAMP WHERE id = ?")
     .run(sub.plan_id, sub.user_id);
 }
 

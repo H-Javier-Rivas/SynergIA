@@ -1,7 +1,6 @@
----
-description: Al recibir el comando /start de Telegram, busca y resume los correos no leídos y los próximos eventos del calendario.
+description: Al recibir el comando /agenda de Telegram, busca y resume los correos no leídos y los próximos eventos del calendario.
 triggers:
-  - "/start"
+  - "/agenda"
 ---
 
 # Workflow: Bienvenida y Agenda Diaria
