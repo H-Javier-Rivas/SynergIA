@@ -7,6 +7,7 @@ import { extractTextFromPdf, extractTextFromDocx } from '../agent/document.js';
 import { syncLibrary } from '../agent/library.js';
 import { memory } from '../memory/history.js';
 import { executeWorkflowIfMatches } from '../agent/workflows.js';
+import { getTool } from '../tools/index.js';
 import { 
     getUserByTelegramId, 
     createUser, 
@@ -640,7 +641,12 @@ bot.on('message:entities:bot_command', async (ctx, next) => {
             await ctx.replyWithChatAction('typing');
             try {
                 const extraText = text.replace(`/${cmdName}`, '').trim();
-                const instruction = `[INSTRUCCIÓN CRÍTICA DE EJECUCIÓN]
+                const tool = getTool(cmdName);
+                
+                let instruction = `El usuario ha enviado el comando "/${cmdName}". ${extraText}`;
+                
+                if (tool) {
+                    instruction = `[INSTRUCCIÓN CRÍTICA DE EJECUCIÓN]
 El usuario ha activado el comando "/${cmdName}". 
 1. DEBES verificar si tienes una herramienta (función) llamada "${cmdName}".
 2. Si la tienes, DEBES EJECUTARLA de inmediato para obtener datos reales o realizar la acción.
@@ -649,6 +655,7 @@ El usuario ha activado el comando "/${cmdName}".
 5. Responde al final de forma breve y profesional basada en los resultados finales.
 
 Contexto adicional: "${extraText}"`;
+                }
                 
                 const replyText = await processUserMessage(userId, instruction);
                 await sendLongMessage(ctx, replyText);
