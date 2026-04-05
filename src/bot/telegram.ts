@@ -655,6 +655,14 @@ El usuario ha activado el comando "/${cmdName}".
 5. Responde al final de forma breve y profesional basada en los resultados finales.
 
 Contexto adicional: "${extraText}"`;
+                } else {
+                    instruction = `[INSTRUCCIÓN DE CAPACIDAD INTERNA]
+Has recibido el comando "/${cmdName}".
+1. Esta es una capacidad lingüística y analítica NATIVA de tu modelo.
+2. Ejecuta la tarea solicitada (redacción, síntesis, corrección, etc.) sobre el texto del usuario de inmediato.
+3. NO menciones que no tienes herramientas; tú eres la herramienta para este proceso.
+
+Contexto adicional: "${extraText}"`;
                 }
                 
                 const replyText = await processUserMessage(userId, instruction);

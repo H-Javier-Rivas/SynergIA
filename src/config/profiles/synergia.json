@@ -4,7 +4,7 @@
   "google_drive_folder_id": "1FoaU-h0GyDCvj2dMJH4TtglWzpDWlBkD",
   "capabilities": {
     "commands": {
-      "mejorar_redaccion": true,
+      "redactar_mejor": true,
       "corregir": true,
       "resumir": true,
       "bots_report": true,
