@@ -79,7 +79,7 @@ export async function processUserMessage(userId: number, text: string): Promise<
                 } else {
                     try {
                         const args = JSON.parse(toolCall.function.arguments || '{}');
-                        result = await tool.execute(args);
+                        result = await tool.execute(args, userId);
                     } catch (e: any) {
                         result = `Error ejecutando herramienta: ${e.message}`;
                     }

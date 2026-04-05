@@ -83,7 +83,9 @@ if (profile.knowledge_file) {
   }
 }
 
-export const config: Config = {
+export const INSTANCE_ID = instanceId;
+
+export const config: Config & { IS_MASTER: boolean } = {
   TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN as string,
   TELEGRAM_ALLOWED_USER_IDS: parseAllowedUsers(process.env.TELEGRAM_ALLOWED_USER_IDS),
   GROQ_API_KEY: process.env.GROQ_API_KEY as string,
@@ -100,7 +102,8 @@ export const config: Config = {
   KNOWLEDGE: knowledgeContent,
   GOOGLE_DRIVE_FOLDER_ID: profile.google_drive_folder_id,
   capabilities: profile.capabilities || { commands: {}, features: {} },
-  payment_methods: profile.payment_methods
+  payment_methods: profile.payment_methods,
+  IS_MASTER: instanceId === 'synergia'
 };
 
 if (config.TELEGRAM_ALLOWED_USER_IDS.length === 0) {

@@ -1,9 +1,9 @@
-import { Bot, InputFile } from 'grammy';
+import { Bot, InputFile, InlineKeyboard } from 'grammy';
 import { config } from '../config/index.js';
 import { processUserMessage } from '../agent/loop.js';
 import { transcribeAudio } from '../agent/transcription.js';
 import { generateSpeech } from '../agent/tts.js';
-import { extractTextFromPdf, extractTextFromDocx } from '../agent/document.js';
+import { extractTextFromPdf, extractTextFromDocx, extractPagesFromPdf, extractMetadata } from '../agent/document.js';
 import { syncLibrary } from '../agent/library.js';
 import { memory } from '../memory/history.js';
 import { executeWorkflowIfMatches } from '../agent/workflows.js';
@@ -26,7 +26,8 @@ import {
     getUserSubscriptions,
     db,
     deleteUserComplete,
-    restoreUserComplete
+    restoreUserComplete,
+    saveToPersonalLibrary
 } from '../memory/db.js';
 import fs from 'fs';
 import path from 'path';
@@ -432,42 +433,115 @@ bot.on('message:document', async (ctx) => {
 
         const localPath = path.resolve(tempDir, `doc_${Date.now()}.${ext}`);
         const fileUrl = `https://api.telegram.org/file/bot${config.TELEGRAM_BOT_TOKEN}/${filePath}`;
-        const response = await fetch(fileUrl);
-        if (!response.ok) throw new Error('Falló la descarga del documento de Telegram');
+        const responseData = await fetch(fileUrl);
+        if (!responseData.ok) throw new Error('Falló la descarga del documento de Telegram');
         
         // @ts-ignore
-        await streamPipeline(response.body, fs.createWriteStream(localPath));
+        await streamPipeline(responseData.body, fs.createWriteStream(localPath));
 
         let extractedText = '';
+        let pages: string[] = [];
+        let metadata: any = {};
+
         if (ext === 'pdf') {
-            extractedText = await extractTextFromPdf(localPath);
+            pages = await extractPagesFromPdf(localPath);
+            extractedText = pages.join('\n\n');
+            metadata = await extractMetadata(extractedText.substring(0, 5000));
         } else if (ext === 'docx') {
             extractedText = await extractTextFromDocx(localPath);
+            metadata = await extractMetadata(extractedText.substring(0, 5000));
+            pages = [extractedText];
         }
 
-        if (fs.existsSync(localPath)) fs.unlinkSync(localPath);
+        if (!extractedText.trim()) {
+            if (fs.existsSync(localPath)) fs.unlinkSync(localPath);
+            return ctx.reply('No pude extraer texto del documento.');
+        }
 
-        let finalPrompt = caption.trim().length > 0 ? `${caption}\n\n--- Documento adjunto (${fileName}) ---\n${extractedText}` : `Por favor analiza este documento (${fileName}):\n\n${extractedText}`;
+        // Ofrecer guardado persistente con botones inline
+        const keyboard = new InlineKeyboard()
+            .text("💾 Guardar en Mi Biblioteca", `save_doc:${fileId}`)
+            .row()
+            .text("🔍 Solo analizar ahora", "skip_save");
+
+        // Almacenar el texto y metadatos temporalmente vinculados al file_id para el callback
+        (global as any).tempDocs = (global as any).tempDocs || {};
+        (global as any).tempDocs[fileId] = {
+            pages: pages,
+            metadata,
+            fileName
+        };
+
+        const metadataInfo = metadata.title && metadata.title !== "Desconocido" 
+            ? `📚 <b>${metadata.title}</b>\n✍️ ${metadata.author} (${metadata.year})\n\n` 
+            : '';
+
+        await ctx.reply(`He procesado: <b>${fileName}</b>\n\n${metadataInfo}¿Deseas guardarlo permanentemente en tu biblioteca personal para futuras consultas?`, {
+            parse_mode: 'HTML',
+            reply_markup: keyboard
+        });
+
+        const finalPrompt = caption.trim().length > 0 ? `${caption}\n\n--- Documento adjunto (${fileName}) ---\n${extractedText}` : `Por favor analiza este documento (${fileName}):\n\n${extractedText}`;
         
         const MAX_DOC_CHARS = 100000;
-        if (finalPrompt.length > MAX_DOC_CHARS) {
-             finalPrompt = finalPrompt.substring(0, MAX_DOC_CHARS) + '\n\n... [Texto truncado por límite de longitud]';
+        let p = finalPrompt;
+        if (p.length > MAX_DOC_CHARS) {
+             p = p.substring(0, MAX_DOC_CHARS) + '\n\n... [Texto truncado por límite de longitud]';
              ctx.reply('El documento es muy grande. Solo procesaré las primeras partes del texto.');
         }
 
-        const replyText = await processUserMessage(userId, finalPrompt);
+        const replyText = await processUserMessage(userId, p);
         await sendLongMessage(ctx, replyText);
 
-        if (memory.getAudioMode(userId) === 'voice') {
-            const audioPath = await generateSpeech(replyText);
-            if (audioPath) {
-                await ctx.replyWithVoice(new InputFile(audioPath));
-                if (fs.existsSync(audioPath)) fs.unlinkSync(audioPath);
-            }
-        }
+        if (fs.existsSync(localPath)) fs.unlinkSync(localPath);
+
     } catch (error: any) {
         console.error('Error procesando documento:', error);
         await ctx.reply(`Error al procesar el documento: ${error.message}`);
+    }
+});
+
+// Manejador de botones para guardar en biblioteca
+bot.on("callback_query:data", async (ctx) => {
+    const data = ctx.callbackQuery.data;
+    const user = getUserByTelegramId(ctx.from.id);
+    if (!user) return;
+
+    if (data.startsWith("save_doc:")) {
+        const fileId = data.split(":")[1];
+        const docData = (global as any).tempDocs?.[fileId];
+
+        if (docData) {
+            await ctx.answerCallbackQuery({ text: "Guardando en biblioteca..." });
+            await ctx.editMessageText(`⌛ Indexando páginas de <b>${docData.fileName}</b>...`, { parse_mode: 'HTML' });
+
+            try {
+                // Guardar cada página de forma independiente para búsqueda precisa
+                for (let i = 0; i < docData.pages.length; i++) {
+                    saveToPersonalLibrary({
+                        user_id: user.id,
+                        name: docData.fileName,
+                        content: docData.pages[i],
+                        page_number: i + 1,
+                        author: docData.metadata.author || 'Desconocido',
+                        year: docData.metadata.year || 'S/F',
+                        title: docData.metadata.title || docData.fileName,
+                        publisher: docData.metadata.publisher || 'Desconocido'
+                    });
+                }
+                
+                await ctx.editMessageText(`✅ <b>${docData.fileName}</b> se ha guardado correctamente. Ahora puedes hacer preguntas sobre su contenido en cualquier momento sin volver a subirlo.`, { parse_mode: 'HTML' });
+                delete (global as any).tempDocs[fileId];
+            } catch (e) {
+                console.error('Error saving to personal library:', e);
+                await ctx.editMessageText("❌ Error al guardar en la biblioteca.");
+            }
+        } else {
+            await ctx.answerCallbackQuery({ text: "Error: Los datos han expirado. Por favor, reenvía el archivo." });
+        }
+    } else if (data === "skip_save") {
+        await ctx.answerCallbackQuery({ text: "Análisis temporal completado." });
+        await ctx.editMessageText("Documento utilizado solo para la respuesta actual.");
     }
 });
 

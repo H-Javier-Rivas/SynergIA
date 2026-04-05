@@ -5,8 +5,9 @@ import fs from 'fs';
 // Inicializar la base de datos
 export const db = new Database(config.DB_PATH);
 
-// Habilitar modo WAL para mejor concurrencia
+// Habilitar modo WAL y llaves foráneas para integridad y concurrencia
 db.pragma('journal_mode = WAL');
+db.pragma('foreign_keys = ON');
 
 // Interfaces para Multi-tenant
 export interface User {
@@ -130,6 +131,24 @@ export function initDB() {
       FOREIGN KEY (user_id) REFERENCES users(id)
     );
 
+    CREATE TABLE IF NOT EXISTS personal_library (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      file_id TEXT,
+      name TEXT NOT NULL,
+      content TEXT NOT NULL,
+      page_number INTEGER,
+      author TEXT,
+      year TEXT,
+      title TEXT,
+      publisher TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_personal_lib_user ON personal_library(user_id);
+    CREATE INDEX IF NOT EXISTS idx_personal_lib_name ON personal_library(name);
+    
     CREATE INDEX IF NOT EXISTS idx_users_telegram ON users(telegram_id);
     CREATE INDEX IF NOT EXISTS idx_users_agent ON users(agent_id);
     CREATE INDEX IF NOT EXISTS idx_subscriptions_user ON subscriptions(user_id);
@@ -443,7 +462,7 @@ export function getSubscriptionById(id: number): Subscription | null {
 }
 
 export function getPendingSubscriptions(): Subscription[] {
-  return db.prepare('SELECT * FROM subscriptions WHERE status = "pending"').all() as Subscription[];
+  return db.prepare("SELECT * FROM subscriptions WHERE status = 'pending'").all() as Subscription[];
 }
 
 export function verifySubscription(id: number, adminId: number): void {
@@ -465,4 +484,46 @@ export function verifySubscription(id: number, adminId: number): void {
 
 export function getUserSubscriptions(userId: number): Subscription[] {
   return db.prepare('SELECT * FROM subscriptions WHERE user_id = ? ORDER BY created_at DESC').all(userId) as Subscription[];
+}
+
+// ============================================
+// Biblioteca Personal (Memoria a Largo Plazo)
+// ============================================
+
+export function saveToPersonalLibrary(data: {
+    user_id: number;
+    name: string;
+    content: string;
+    page_number?: number;
+    author?: string;
+    year?: string;
+    title?: string;
+    publisher?: string;
+}) {
+    const stmt = db.prepare(`
+        INSERT INTO personal_library (user_id, name, content, page_number, author, year, title, publisher)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    return stmt.run(
+        data.user_id,
+        data.name,
+        data.content,
+        data.page_number || null,
+        data.author || null,
+        data.year || null,
+        data.title || null,
+        data.publisher || null
+    );
+}
+
+export function searchPersonalLibrary(userId: number, query: string, limit: number = 5): any[] {
+    const keywords = query.toLowerCase().split(' ').filter(k => k.length > 3);
+    if (keywords.length === 0) return [];
+
+    let sql = 'SELECT * FROM personal_library WHERE user_id = ? AND (';
+    const conditions = keywords.map(() => 'LOWER(content) LIKE ?').join(' AND ');
+    sql += conditions + `) LIMIT ${limit}`;
+
+    const params = [userId, ...keywords.map(k => `%${k}%`)];
+    return db.prepare(sql).all(...params) as any[];
 }

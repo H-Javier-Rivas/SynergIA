@@ -152,23 +152,51 @@ export async function syncLibrary(onProgress?: (msg: string) => void) {
   log('Sincronización de biblioteca completada.');
 }
 
-export function searchLibrary(query: string, limit: number = 3): { name: string, snippet: string }[] {
-    // Búsqueda simple usando LIKE. En SQLite podríamos usar FTS5, pero para empezar usaremos LIKE en minúsculas.
-    // Buscaremos fragmentos que contengan las palabras clave.
+export function searchLibrary(query: string, limit: number = 3, userId?: number, allUsers: boolean = false): { name: string, snippet: string, source: string, page?: number, author?: string, year?: string }[] {
     const keywords = query.toLowerCase().split(' ').filter(k => k.length > 3);
-    
     if (keywords.length === 0) return [];
 
-    let sql = 'SELECT name, content FROM library_index WHERE ';
-    const conditions = keywords.map(() => 'LOWER(content) LIKE ?').join(' AND ');
-    sql += conditions + ` LIMIT ${limit}`;
+    let results: any[] = [];
 
-    const params = keywords.map(k => `%${k}%`);
+    // 1. Buscar en la biblioteca global (Drive)
+    let sqlGlobal = 'SELECT name, content FROM library_index WHERE ';
+    const conditionsGlobal = keywords.map(() => 'LOWER(content) LIKE ?').join(' AND ');
+    sqlGlobal += conditionsGlobal + ` LIMIT ${limit}`;
+    const paramsGlobal = keywords.map(k => `%${k}%`);
     
-    const results = db.prepare(sql).all(...params) as any[];
+    const globalRows = db.prepare(sqlGlobal).all(...paramsGlobal) as any[];
+    results = globalRows.map(row => ({ ...row, source: 'Biblioteca Global (Drive)' }));
 
+    // 2. Buscar en la biblioteca personal
+    if (allUsers) {
+        // Búsqueda de Superusuario: Buscar en todos los documentos personales
+        let sqlPersonal = `
+            SELECT pl.name, pl.content, pl.page_number, pl.author, pl.year, u.name as owner_name 
+            FROM personal_library pl
+            JOIN users u ON pl.user_id = u.id
+            WHERE (`;
+        const conditionsPersonal = keywords.map(() => 'LOWER(pl.content) LIKE ?').join(' AND ');
+        sqlPersonal += conditionsPersonal + `) LIMIT ${limit * 2}`; // Mayor límite por ser global
+        const paramsPersonal = [...keywords.map(k => `%${k}%`)];
+        
+        const personalRows = db.prepare(sqlPersonal).all(...paramsPersonal) as any[];
+        results = [...results, ...personalRows.map(row => ({ 
+            ...row, 
+            source: `Biblioteca Personal de ${row.owner_name || 'Usuario Desconocido'}` 
+        }))];
+    } else if (userId) {
+        // Búsqueda normal: Solo el usuario actual
+        let sqlPersonal = 'SELECT name, content, page_number, author, year FROM personal_library WHERE user_id = ? AND (';
+        const conditionsPersonal = keywords.map(() => 'LOWER(content) LIKE ?').join(' AND ');
+        sqlPersonal += conditionsPersonal + `) LIMIT ${limit}`;
+        const paramsPersonal = [userId, ...keywords.map(k => `%${k}%`)];
+        
+        const personalRows = db.prepare(sqlPersonal).all(...paramsPersonal) as any[];
+        results = [...results, ...personalRows.map(row => ({ ...row, source: 'Mi Biblioteca Personal' }))];
+    }
+
+    // Procesar snippets y formatear
     return results.map(row => {
-        // Encontrar un fragmento alrededor del primer keyword encontrado
         const contentLower = row.content.toLowerCase();
         let firstMatchIdx = -1;
         for (const word of keywords) {
@@ -182,8 +210,8 @@ export function searchLibrary(query: string, limit: number = 3): { name: string,
         let snippet = '';
         if (firstMatchIdx !== -1) {
             const start = Math.max(0, firstMatchIdx - 150);
-            const Math_min = Math.min(row.content.length, firstMatchIdx + 300);
-            snippet = row.content.substring(start, Math_min).replace(/\n/g, ' ').trim();
+            const end = Math.min(row.content.length, firstMatchIdx + 300);
+            snippet = row.content.substring(start, end).replace(/\n/g, ' ').trim();
             snippet = `...${snippet}...`;
         } else {
             snippet = row.content.substring(0, 400).replace(/\n/g, ' ').trim() + '...';
@@ -191,7 +219,11 @@ export function searchLibrary(query: string, limit: number = 3): { name: string,
 
         return {
             name: row.name,
-            snippet: snippet
+            snippet: snippet,
+            source: row.source,
+            page: row.page_number,
+            author: row.author,
+            year: row.year
         };
     });
 }

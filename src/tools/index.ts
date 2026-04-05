@@ -2,7 +2,7 @@ export interface Tool {
   name: string;
   description: string;
   parameters: Record<string, any>;
-  execute: (args?: any) => Promise<string> | string;
+  execute: (args?: any, userId?: number) => Promise<string> | string;
 }
 
 export const toolsRegistry: Map<string, Tool> = new Map();
