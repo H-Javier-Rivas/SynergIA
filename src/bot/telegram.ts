@@ -248,25 +248,50 @@ bot.command('restore', async (ctx) => {
 });
 
 bot.command(['ayuda', 'help'], async (ctx) => await showHelp(ctx));
+
+bot.command('about', async (ctx) => {
+    const aboutMsg = `💼 <b>Sobre SynergIA & Hernán Javier Rivas</b>
+
+SynergIA es más que un bot; es un ecosistema de inteligencia artificial diseñado para potenciar la productividad y el aprendizaje académico.
+
+<b>Hernán Javier Rivas:</b>
+Fundador, CEO y Arquitecto detrás de este ecosistema. Con una visión centrada en la eficiencia, Hernán ha diseñado SynergIA para ser el aliado definitivo de doctorandos, investigadores y profesionales.
+
+<b>Misión:</b>
+Democratizar el acceso a herramientas de IA de alto nivel, proporcionando asistentes especializados que comprenden contextualmente las necesidades de sus usuarios.
+
+<i>"Innovación con propósito, tecnología con sentido."</i>`;
+    await ctx.reply(aboutMsg, { parse_mode: 'HTML' });
+});
+
 bot.hears(/^\/\?$/, async (ctx) => await showHelp(ctx));
 
 async function showHelp(ctx: any) {
-    const helpMessage = `🤖 <b>Comandos de ${config.BOT_NAME}:</b>
+    const publicHelp = `🤖 <b>Comandos Básicos de ${config.BOT_NAME}:</b>
+• /start - Ver mi plan y estado.
+• /reset - Limpiar memoria del chat.
+• /audio - Configurar Voz/Texto.
+• /about - Sobre este proyecto.
+• /ayuda - Ver esta lista.`;
 
-• /start - Inicia el bot y recibe el saludo inicial.
-• /reset - Borra el historial de la conversación actual.
-• /audio - Ver el modo de audio actual.
-• /audio voz - Activar respuestas con voz.
-• /audio texto - Responder solo con texto.
-• /audio off - Desactivar audio.
-• /sync - Actualizar la base de conocimientos desde Google Drive (Administrador).
-• /ayuda o /help - Ver esta lista de ayuda.
+    const aiCmds = Object.keys(config.capabilities.commands || {})
+        .filter(cmd => config.capabilities.commands[cmd] === true && cmd !== 'about')
+        .map(cmd => `• /${cmd} - ${cmd.replace(/_/g, ' ')}`)
+        .join('\n');
 
-<b>Tips:</b>
-• Puedes enviarme PDFs o archivos Word para que los analice.
-• Puedes enviarme mensajes de voz y te responderé según tu configuración de /audio.`;
+    const aiHelp = aiCmds ? `\n\n✨ <b>Capacidades de IA:</b>\n${aiCmds}` : '';
 
-    await ctx.reply(helpMessage);
+    const adminHelp = config.TELEGRAM_ALLOWED_USER_IDS.includes(ctx.from?.id) ? 
+        `\n\n🛡️ <b>Administración:</b>
+• /pagos - Ver pendientes.
+• /verificar [ID] - Aprobar pago.
+• /sync - Sincronizar Knowledge.` : '';
+
+    const tips = `\n\n💡 <b>Tips:</b>
+• Envía PDFs o Word para análisis profundo.
+• Usa notas de voz para mayor fluidez.`;
+
+    await ctx.reply(publicHelp + aiHelp + adminHelp + tips, { parse_mode: 'HTML' });
 }
 
 bot.command('audio', async (ctx) => {
@@ -615,7 +640,15 @@ bot.on('message:entities:bot_command', async (ctx, next) => {
             await ctx.replyWithChatAction('typing');
             try {
                 const extraText = text.replace(`/${cmdName}`, '').trim();
-                const instruction = `[INSTRUCCIÓN INTERNA AL SISTEMA] El usuario ha invocado el comando "/${cmdName}". Tu tarea es ejecutar la acción correspondiente de manera elegante y narrativa, aplicando tu estilo profesional al contexto actual o al texto adjunto: "${extraText}". NO respondas con viñetas mecánicas ni enumeraciones markdown innecesarias, aplica un estilo fluido, descriptivo y académico.`;
+                const instruction = `[INSTRUCCIÓN CRÍTICA DE EJECUCIÓN]
+El usuario ha activado el comando "/${cmdName}". 
+1. DEBES verificar si tienes una herramienta (función) llamada "${cmdName}".
+2. Si la tienes, DEBES EJECUTARLA de inmediato para obtener datos reales o realizar la acción.
+3. No inventes datos ni des una descripción teórica si existe una herramienta. Usa el resultado de la herramienta para tu respuesta.
+4. Si el resultado de la herramienta es una tabla, un reporte tabular o contiene bloques de código, DEBES respetarlos íntegramente. No conviertas informes técnicos en prosa narrativa a menos que el usuario lo pida específicamente.
+5. Responde al final de forma breve y profesional basada en los resultados finales.
+
+Contexto adicional: "${extraText}"`;
                 
                 const replyText = await processUserMessage(userId, instruction);
                 await sendLongMessage(ctx, replyText);
@@ -736,18 +769,30 @@ async function registerCommands() {
     try {
         // 1. Comandos para TODOS los usuarios
         const publicCommands = [
-            { command: 'start', description: '🚀 Iniciar / Ver mi plan' },
-            { command: 'reset', description: '🧹 Limpiar la memoria del chat' },
-            { command: 'audio', description: '🎙️ Configura Voz/Texto' },
-            { command: 'ayuda', description: '❓ Ayuda y Capacidades' }
+            { command: 'start', description: '🚀 Inicia tu aventura' },
+            { command: 'ayuda', description: '❓ Capacidades y Ayuda' },
+            { command: 'reset', description: '🧹 Limpiar Contexto' },
+            { command: 'about', description: '🏢 Sobre SynergIA' },
+            { command: 'audio', description: '🎙️ Configura Voz/Texto' }
         ];
 
         // 2. Comandos de IA dinámicos (basados en capabilities)
+        const commandLabels: { [key: string]: string } = {
+            'buscar_paper': '🔎 Buscar Papers',
+            'citar': '📚 Generar Cita',
+            'mejorar_redaccion': '✍️ Mejorar Redacción',
+            'corregir': '✅ Corregir Texto',
+            'parafrasear': '🔄 Parafrasear',
+            'resumir': '📝 Resumir Punto',
+            'teorizar': '🧠 Teorizar',
+            'bots_report': '📊 Informe de Bots de SynergIA'
+        };
+
         const aiCommands = Object.keys(config.capabilities.commands || {})
-            .filter(cmd => config.capabilities.commands[cmd] === true)
+            .filter(cmd => config.capabilities.commands[cmd] === true && cmd !== 'about')
             .map(cmd => ({
                 command: cmd,
-                description: `🪄 ${cmd.replace(/_/g, ' ')}`
+                description: commandLabels[cmd] || `🪄 ${cmd.replace(/_/g, ' ')}`
             }));
 
         // 3. Comandos SOLO para ADMINISTRADORES

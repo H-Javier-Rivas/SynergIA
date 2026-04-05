@@ -11,7 +11,8 @@
       "corregir": true,
       "parafrasear": true,
       "resumir": true,
-      "teorizar": true
+      "teorizar": true,
+      "about": true
     },
     "features": {
       "audio_response": true,

@@ -34,7 +34,7 @@ export function getToolsDefinitions() {
             // return !!config.capabilities.commands[tool.name]; 
             // Pero como no hemos mapeado todo, omitimos el filtro estricto por ahora y confiamos en el system prompt.
             // Para el admin tool, sí la restringimos solo al bot que la tenga activada:
-            if (tool.name === 'get_bots_summary') return !!config.capabilities.commands['get_bots_summary'];
+            if (tool.name === 'bots_report') return !!config.capabilities.commands['bots_report'];
         }
         return true;
       })

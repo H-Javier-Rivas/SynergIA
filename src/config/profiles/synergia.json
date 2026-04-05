@@ -7,7 +7,8 @@
       "mejorar_redaccion": true,
       "corregir": true,
       "resumir": true,
-      "get_bots_summary": true
+      "bots_report": true,
+      "about": true
     },
     "features": {
       "audio_response": true,

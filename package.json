@@ -30,6 +30,7 @@
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^25.3.5",
     "@types/pdf-parse": "^1.1.5",
+    "md-to-pdf": "^5.2.5",
     "pm2": "^6.0.14",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3",
