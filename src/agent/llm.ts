@@ -151,7 +151,7 @@ async function fallbackOpenRouter(messages: any[], tools: any[]) {
                 payload.tools = tools;
             }
 
-            const response = await fetch(openRouterEndpoint, {
+            let response = await fetch(openRouterEndpoint, {
                 method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${config.OPENROUTER_API_KEY}`,
@@ -160,8 +160,24 @@ async function fallbackOpenRouter(messages: any[], tools: any[]) {
                 body: JSON.stringify(payload)
             });
 
-            const data = await response.json();
+            let data = await response.json();
             
+            // Si falla por falta de soporte de herramientas, intentamos de nuevo sin herramientas para este modelo
+            if (data.error && (data.error.code === 400 || data.error.code === 404) && 
+                (data.error.message.includes("tool") || data.error.message.includes("function"))) {
+                console.warn(`⚠️ Modelo ${model} no soporta herramientas. Reintentando sin ellas...`);
+                delete payload.tools;
+                response = await fetch(openRouterEndpoint, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${config.OPENROUTER_API_KEY}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(payload)
+                });
+                data = await response.json();
+            }
+
             if (data.error) {
                 const code = data.error.code;
                 const msg = data.error.message || "";
