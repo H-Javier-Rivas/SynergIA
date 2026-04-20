@@ -65,7 +65,8 @@ export function initDB() {
       content TEXT NOT NULL,
       tool_calls TEXT,
       tool_call_id TEXT,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(id)
     );
 
     CREATE INDEX IF NOT EXISTS idx_messages_user_id ON messages(user_id);
@@ -73,7 +74,8 @@ export function initDB() {
 
     CREATE TABLE IF NOT EXISTS user_prefs (
       user_id INTEGER PRIMARY KEY,
-      audio_mode TEXT DEFAULT 'text'
+      audio_mode TEXT DEFAULT 'text',
+      FOREIGN KEY (user_id) REFERENCES users(id)
     );
 
     CREATE TABLE IF NOT EXISTS library_index (
@@ -187,6 +189,19 @@ export function initDB() {
     console.log('🔄 Migrando base de datos: Agregando columna audio_mode a user_prefs...');
     db.exec(`ALTER TABLE user_prefs ADD COLUMN audio_mode TEXT DEFAULT 'text'`);
   }
+}
+
+/**
+ * Limpia todas las tablas de datos (útil para tests)
+ * Respeta el orden de las llaves foráneas.
+ */
+export function clearDatabase() {
+  db.exec('DELETE FROM messages');
+  db.exec('DELETE FROM subscriptions');
+  db.exec('DELETE FROM user_usage');
+  db.exec('DELETE FROM personal_library');
+  db.exec('DELETE FROM user_prefs');
+  db.exec('DELETE FROM users');
 }
 
 // Asegurarse de cerrar la base de datos al salir

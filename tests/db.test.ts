@@ -5,10 +5,7 @@ describe('Limites y Control de Cuotas', () => {
   const telegramId = 999111;
 
   beforeEach(() => {
-    dbManager.db.exec('DELETE FROM subscriptions');
-    dbManager.db.exec('DELETE FROM user_usage');
-    dbManager.db.exec('DELETE FROM personal_library');
-    dbManager.db.exec('DELETE FROM users');
+    dbManager.clearDatabase();
     
     dbManager.createUser({
       telegram_id: telegramId,
