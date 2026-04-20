@@ -1,19 +1,49 @@
-# SynergIA 🤖
+SynergIA es un ecosistema de agentes personales inteligentes operando sobre Telegram, diseñado para potenciar la productividad mediante análisis de documentos, síntesis de voz y automatización de búsquedas.
 
-**Asistente personal inteligente y versátil.**
-
-Este proyecto implementa un agente de IA multi-tenant sobre Telegram, con soporte para perfiles personalizados, herramientas inteligentes (Google Search, Drive Sync), y un flujo de trabajo optimizado para el terminal.
+**Versión Actual:** `v2.0.0` (Gestionada en `package.json`)
 
 ---
 
 ## 📋 Tabla de Contenidos
 
+- [Arquitectura del Proyecto](#-arquitectura-del-proyecto)
+- [Pruebas y QA](#-pruebas-y-qa)
 - [Gestión del Proyecto (PM2)](#-gestión-del-proyecto-pm2)
 - [OpenCode + OpenRouter](#-opencode--openrouter)
   - [Configuración](#1-configuración)
   - [Modelos Gratuitos](#2-modelos-gratuitos-27-disponibles)
   - [Modelos Premium](#3-modelos-premium)
   - [Comandos Útiles](#4-comandos-útiles-de-opencode)
+
+---
+
+## 🏗️ Arquitectura del Proyecto
+
+El bot ha sido refactorizado recientemente (v2.0.0) para seguir una estructura modular basada en `Composer` de **grammY**:
+
+- **`src/bot/handlers/`**: Contiene la lógica dividida por tipo de interacción.
+    - `commands.ts`: Manejo de comandos estáticos (`/start`, `/reset`, `/audio`).
+    - `messages.ts`: Gestión de mensajes de texto, audios/voz, documentos (PDF/DOCX) y fotos.
+    - `callbacks.ts`: Procesamiento de botones inline y flujo de suscripciones.
+- **`src/bot/utils.ts`**: Utilidades comunes para formateo HTML y envío de mensajes largos.
+- **`src/memory/`**: Lógica de persistencia en SQLite y sincronización con Firebase/Google Drive.
+- **`src/agent/`**: Motor de razonamiento (LLM), transcripción y síntesis de voz.
+
+---
+
+## 🧪 Pruebas y QA
+
+El proyecto cuenta con una suite de pruebas automatizadas con **Vitest**:
+
+```bash
+npm test          # Ejecutar todos los tests
+npm run test:watch # Modo desarrollo (recarga al guardar)
+```
+
+**Principales suites:**
+- `db.test.ts`: Control de cuotas y límites mensuales.
+- `subscriptions.test.ts`: Flujo de pagos y verificación de planes.
+- `bot_logic.test.ts`: Integración de la lógica del agente.
 
 ---
 
@@ -142,10 +172,6 @@ opencode --session <session_id>
 # Ver estadísticas de uso de tokens
 opencode stats
 
-# Gestionar proveedores
-opencode providers list
-```
-
 ---
 
-*Documento actualizado el 26 de marzo de 2026.*
+*Documento actualizado el 20 de abril de 2026 (v2.0.0).*
