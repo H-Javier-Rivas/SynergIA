@@ -366,11 +366,19 @@ export function incrementUsage(userId: number): void {
   
   if (!usage || !usage.period_end || new Date(usage.period_end) < new Date()) {
     // Nuevo período
+    console.log(`[DB] Creating new usage record for userId: ${userId}`);
     const stmt = db.prepare(`
       INSERT INTO user_usage (user_id, requests_count, period_start, period_end)
       VALUES (?, 1, ?, ?)
     `);
-    stmt.run(userId, currentMonth, nextMonth);
+    try {
+      stmt.run(userId, currentMonth, nextMonth);
+    } catch (e) {
+      console.error(`[DB] Error inserting into user_usage: ${e.message}. userId: ${userId}`);
+      const userCheck = db.prepare('SELECT id FROM users WHERE id = ?').get(userId);
+      console.log(`[DB] User check result: ${JSON.stringify(userCheck)}`);
+      throw e;
+    }
   } else {
     // Incrementar contador
     const stmt = db.prepare('UPDATE user_usage SET requests_count = requests_count + 1 WHERE id = ?');

@@ -16,55 +16,44 @@ const genAI = config.GEMINI_API_KEY ? new GoogleGenerativeAI(config.GEMINI_API_K
 const openRouterEndpoint = 'https://openrouter.ai/api/v1/chat/completions';
 
 export async function chatCompletion(messages: any[], tools: any[] = []) {
-  const maxRetries = 1;
-  let attempt = 0;
-
-  while (attempt <= maxRetries) {
-    try {
-      // Intentar primero con Groq
-      const response = await groq.chat.completions.create({
-        model: 'llama-3.3-70b-versatile', 
-        messages,
-        tools: tools.length > 0 ? tools : undefined,
-        tool_choice: tools.length > 0 ? 'auto' : undefined,
-      });
-      
-      const msg = response.choices[0].message;
-      if (msg.content || (msg.tool_calls && msg.tool_calls.length > 0)) {
-        return msg;
+  try {
+    // Intentar primero con Groq
+    const response = await groq.chat.completions.create({
+      model: 'llama-3.3-70b-versatile', 
+      messages,
+      tools: tools.length > 0 ? tools : undefined,
+      tool_choice: tools.length > 0 ? 'auto' : undefined,
+    });
+    
+    const msg = response.choices[0].message;
+    if (msg.content || (msg.tool_calls && msg.tool_calls.length > 0)) {
+      return msg;
+    }
+    
+    throw new Error("Empty response");
+  } catch (error: any) {
+    // Fallback 1: OpenRouter
+    if (config.OPENROUTER_API_KEY && config.OPENROUTER_API_KEY !== "SUTITUYE POR EL TUYO") {
+      try {
+        console.log('Intentando fallback a OpenRouter...');
+        return await fallbackOpenRouter(messages, tools);
+      } catch (orError) {
+        console.error('Fallback de OpenRouter falló:', orError);
       }
-      
-      throw new Error("Empty response");
-    } catch (error: any) {
-      // Fallback 1: OpenRouter
-      if (config.OPENROUTER_API_KEY && config.OPENROUTER_API_KEY !== "SUTITUYE POR EL TUYO") {
+    }
+
+    // Fallback 2: Gemini
+    if (genAI) {
         try {
-          console.log('Intentando fallback a OpenRouter...');
-          return await fallbackOpenRouter(messages, tools);
-        } catch (orError) {
-          console.error('Fallback de OpenRouter falló:', orError);
+            console.log('Intentando fallback final a Gemini...');
+            return await fallbackGemini(messages, tools);
+        } catch (gemError) {
+            console.error('Fallback de Gemini falló:', gemError);
         }
-      }
-
-      // Fallback 2: Gemini
-      if (genAI) {
-          try {
-              console.log('Intentando fallback final a Gemini...');
-              return await fallbackGemini(messages, tools);
-          } catch (gemError) {
-              console.error('Fallback de Gemini falló:', gemError);
-          }
-      }
-
-      attempt++;
-      if (attempt <= maxRetries) {
-        console.warn(`⚠️ Intento ${attempt} fallido. Reintentando en 1.5s...`);
-        await new Promise(resolve => setTimeout(resolve, 1500));
-      }
     }
   }
   
-  throw new Error('Nuestros servidores están experimentando una alta demanda en este momento. Por favor, intenta enviar tu mensaje nuevamente en unos segundos.');
+  throw new Error('Nuestros servidores están experimentando mucha demanda en este momento. Por favor, reintenta en unos segundos.');
 }
 
 async function fallbackGemini(messages: any[], tools: any[]) {
@@ -120,13 +109,8 @@ async function fallbackOpenRouter(messages: any[], tools: any[]) {
     // Ordenados de mayor a menor capacidad para maximizar calidad de respuesta
     const fallbackModels = [
         config.OPENROUTER_MODEL,                              // Modelo configurado en .env
-        "meta-llama/llama-3.3-70b-instruct:free",             // 70B - Muy capaz, 65k ctx
-        "qwen/qwen3-coder:free",                              // 480B MoE - Excelente para código, 262k ctx
-        "nvidia/nemotron-3-super-120b-a12b:free",             // 120B MoE - Buena calidad, 262k ctx
-        "google/gemma-3-27b-it:free",                         // 27B - Confiable, 131k ctx
-        "mistralai/mistral-small-3.1-24b-instruct:free",      // 24B - Rápido y estable, 128k ctx
-        "stepfun/step-3.5-flash:free",                        // Flash - Rápido, 256k ctx
-        "meta-llama/llama-3.2-3b-instruct:free"               // 3B - Ligero, último recurso, 131k ctx
+        "google/gemma-3-27b-it:free",                         // 27B - Confiable
+        "meta-llama/llama-3.3-70b-instruct:free"              // 70B - Muy capaz
     ].filter((m, i, self) => m && self.indexOf(m) === i); // Únicos
 
     const sanitizedHistory = messages.map(msg => {

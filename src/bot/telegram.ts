@@ -68,26 +68,6 @@ bot.command('start', async (ctx) => {
 
     const user = getUserByTelegramId(userId);
 
-    if (user) {
-        const plan = getPlan(user.plan);
-        const limit = checkUserLimit(userId);
-        
-        let statusMsg = `¡Bienvenido de nuevo, <b>${userName}</b>! 👋`;
-        statusMsg += `\n\n📊 <b>Tu plan:</b> ${plan?.name || user.plan}`;
-        
-        if (limit.remaining > 0) {
-            statusMsg += `\n📨 <b>Mensajes restantes:</b> ${limit.remaining} este mes`;
-        } else if (limit.remaining === -1) {
-            statusMsg += `\n📨 <b>Mensajes:</b> Ilimitados`;
-        } else {
-            statusMsg += `\n⚠️ <b>Has alcanzado tu límite de mensajes.</b> Actualiza tu plan para continuar.`;
-        }
-        
-        statusMsg += `\n\n¿En qué puedo ayudarte hoy?`;
-        
-        return await ctx.reply(statusMsg, { parse_mode: 'HTML' });
-    }
-
     const plans = getAllPlans();
     
     const planKeyboard = {
@@ -105,6 +85,26 @@ bot.command('start', async (ctx) => {
             })
         }
     };
+
+    if (user) {
+        const plan = getPlan(user.plan);
+        const limit = checkUserLimit(userId);
+        
+        let statusMsg = `¡Bienvenido de nuevo, <b>${userName}</b>! 👋`;
+        statusMsg += `\n\n📊 <b>Tu plan:</b> ${plan?.name || user.plan}`;
+        
+        if (limit.remaining > 0) {
+            statusMsg += `\n📨 <b>Mensajes restantes:</b> ${limit.remaining} este mes`;
+        } else if (limit.remaining === -1) {
+            statusMsg += `\n📨 <b>Mensajes:</b> Ilimitados`;
+        } else {
+            statusMsg += `\n⚠️ <b>Has alcanzado tu límite de mensajes.</b> Actualiza tu plan para continuar.`;
+        }
+        
+        statusMsg += `\n\nSelecciona un plan si deseas actualizar:`;
+        
+        return await ctx.reply(statusMsg, { parse_mode: 'HTML', ...planKeyboard });
+    }
 
     const welcomeMessage = `
 ¡Hola! 👋 Soy <b>${config.BOT_NAME}</b>, tu asistente inteligente.
@@ -145,14 +145,20 @@ bot.callbackQuery(/plan_(.+)/, async (ctx) => {
     }
 
     if (plan.price_monthly === 0) {
-        createUser({
-            telegram_id: userId,
-            agent_id: process.env.INSTANCE_ID || 'synergia',
-            plan: planId,
-            status: 'active',
-            name: userName,
-            username: ctx.from?.username
-        });
+        let user = getUserByTelegramId(userId);
+        if (!user) {
+            createUser({
+                telegram_id: userId,
+                agent_id: process.env.INSTANCE_ID || 'synergia',
+                plan: planId,
+                status: 'active',
+                name: userName,
+                username: ctx.from?.username
+            });
+        } else {
+            updateUserPlan(user.id, planId);
+            updateUserStatus(user.id, 'active');
+        }
 
         await ctx.answerCallbackQuery(`¡Plan ${plan.name} activado!`);
         
