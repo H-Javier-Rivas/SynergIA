@@ -1,0 +1,13 @@
+CONCEPTOS BASE DE ESTADÍSTICA PARA SYNERGIA
+
+1. Media (Promedio): Suma de todos los valores dividida por el número de observaciones.
+2. Mediana: Valor central cuando los datos están ordenados.
+3. Desviación Estándar: Medida de cuánto se alejan los datos de la media.
+
+DISTRIBUCIONES:
+- Normal (Campana de Gauss): Distribución simétrica definida por media y desviación estándar.
+- Binomial: Probabilidad de éxito en n ensayos independientes.
+
+PRUEBAS DE HIPÓTESIS:
+- H0 (Hipótesis Nula): La afirmación que se desea contrastar.
+- Valor p: Si es menor al nivel de significancia (ej. 0.05), se rechaza H0.
