@@ -37,118 +37,99 @@ export async function syncLibrary(onProgress?: (msg: string) => void) {
     if (onProgress) onProgress(msg);
   };
 
-  log('Obteniendo lista de archivos de Google Drive...');
-  
-  // Use 'drive ls' with parent ID which is more reliable than 'search' for folder contents
-  const folderId = config.GOOGLE_DRIVE_FOLDER_ID;
-  const listResultStr = await runGogCommand(`drive ls --parent ${folderId} --json --max 100`);
-  
-  let files: any[] = [];
-  try {
-    if (listResultStr.trim()) {
-       const parsed = JSON.parse(listResultStr);
-       // 'drive ls' results are usually in a 'files' property of the returned object
-       if (parsed.files && Array.isArray(parsed.files)) {
-           files = parsed.files;
-       } else if (Array.isArray(parsed)) {
-           files = parsed;
-       } else {
-           files = [parsed];
-       }
-    }
-  } catch (e: any) {
-     if (!listResultStr.includes('0 found')) {
-         throw new Error(`Error parseando lista de archivos de Drive: ${e.message}`);
-     }
-  }
-
-  log(`Se encontraron ${files.length} archivos en la carpeta de Drive.`);
-
-  for (const file of files) {
-    const fileId = file.id;
-    let fileName = file.name;
-    const mimeType = file.mimeType;
-
-    // Tipos de archivo que aceptamos
-    const isGoogleDoc = mimeType === 'application/vnd.google-apps.document';
-    const isGoogleSheet = mimeType === 'application/vnd.google-apps.spreadsheet';
-    const isGoogleSlide = mimeType === 'application/vnd.google-apps.presentation';
-    const isStandardPdf = mimeType.includes('pdf') || fileName.toLowerCase().endsWith('.pdf');
-    const isStandardDocx = mimeType.includes('wordprocessingml.document') || fileName.toLowerCase().endsWith('.docx');
-    const isPlainText = mimeType === 'text/plain' || fileName.toLowerCase().endsWith('.txt');
-
-    if (!isGoogleDoc && !isGoogleSheet && !isGoogleSlide && !isStandardPdf && !isStandardDocx && !isPlainText) {
-        log(`Saltando archivo no soportado: ${fileName} (${mimeType})`);
-        continue;
-    }
-
-    const localPath = path.resolve(libDir, `${fileId}_${fileName}`);
+  const processFolder = async (folderId: string, folderName: string) => {
+    log(`Escaneando carpeta: ${folderName}...`);
+    const listResultStr = await runGogCommand(`drive ls --parent ${folderId} --json --max 100`);
     
-    // Check if we already have it in the DB
-    const existing = db.prepare('SELECT id, last_sync FROM library_index WHERE file_id = ?').get(fileId) as any;
-    
-    // Si ya existe y tenemos el archivo local, podríamos validar hash, pero para simplificar verificaremos si existe la entrada en BD.
-    if (existing && fs.existsSync(localPath)) {
-        log(`✓ Ya indexado: ${fileName}`);
-        continue;
-    }
-
-    log(`Descargando: ${fileName}...`);
+    let items: any[] = [];
     try {
-        let downloadCmd = `drive download ${fileId} --out "${localPath}"`;
+      if (listResultStr.trim()) {
+        const parsed = JSON.parse(listResultStr);
+        if (parsed.files && Array.isArray(parsed.files)) {
+          items = parsed.files;
+        } else if (Array.isArray(parsed)) {
+          items = parsed;
+        } else {
+          items = [parsed];
+        }
+      }
+    } catch (e: any) {
+      if (!listResultStr.includes('0 found')) {
+        log(`⚠️ Error parseando contenido de ${folderName}: ${e.message}`);
+      }
+      return;
+    }
+
+    for (const item of items) {
+      const { id: itemId, name: itemName, mimeType } = item;
+
+      if (mimeType === 'application/vnd.google-apps.folder') {
+        await processFolder(itemId, `${folderName}/${itemName}`);
+        continue;
+      }
+
+      // Tipos de archivo que aceptamos
+      const isGoogleDoc = mimeType === 'application/vnd.google-apps.document';
+      const isGoogleSheet = mimeType === 'application/vnd.google-apps.spreadsheet';
+      const isGoogleSlide = mimeType === 'application/vnd.google-apps.presentation';
+      const isStandardPdf = mimeType.includes('pdf') || itemName.toLowerCase().endsWith('.pdf');
+      const isStandardDocx = mimeType.includes('wordprocessingml.document') || itemName.toLowerCase().endsWith('.docx');
+      const isPlainText = mimeType === 'text/plain' || itemName.toLowerCase().endsWith('.txt');
+
+      if (!isGoogleDoc && !isGoogleSheet && !isGoogleSlide && !isStandardPdf && !isStandardDocx && !isPlainText) {
+        log(`Saltando archivo no soportado: ${itemName} (${mimeType})`);
+        continue;
+      }
+
+      const localPath = path.resolve(libDir, `${itemId}_${itemName}`);
+      const existing = db.prepare('SELECT id FROM library_index WHERE file_id = ?').get(itemId) as any;
+
+      if (existing && fs.existsSync(localPath)) {
+        log(`✓ Ya indexado: ${itemName}`);
+        continue;
+      }
+
+      log(`Descargando: ${itemName}...`);
+      try {
+        let downloadCmd = `drive download ${itemId} --out "${localPath}"`;
         let exportExt = '';
 
-        if (isGoogleDoc) {
-            exportExt = '.txt';
-            downloadCmd += ` --format txt`;
-        } else if (isGoogleSheet) {
-            exportExt = '.csv';
-            downloadCmd += ` --format csv`;
-        } else if (isGoogleSlide) {
-            exportExt = '.pdf';
-            downloadCmd += ` --format pdf`;
-        }
+        if (isGoogleDoc) { exportExt = '.txt'; downloadCmd += ` --format txt`; }
+        else if (isGoogleSheet) { exportExt = '.csv'; downloadCmd += ` --format csv`; }
+        else if (isGoogleSlide) { exportExt = '.pdf'; downloadCmd += ` --format pdf`; }
 
         const finalLocalPath = exportExt ? localPath + exportExt : localPath;
-
         await runGogCommand(downloadCmd);
         
-        log(`Extrayendo texto de: ${fileName}...`);
+        log(`Extrayendo texto de: ${itemName}...`);
         let extractedText = '';
-        
-        if (isStandardPdf || isGoogleSlide) {
-             extractedText = await extractTextFromPdf(finalLocalPath);
-        } else if (isStandardDocx) {
-             extractedText = await extractTextFromDocx(finalLocalPath);
-        } else if (isGoogleDoc || isGoogleSheet || isPlainText) {
-             // Es un archivo de texto plano (txt o csv)
-             extractedText = fs.readFileSync(finalLocalPath, 'utf8');
-        }
+        if (isStandardPdf || isGoogleSlide) extractedText = await extractTextFromPdf(finalLocalPath);
+        else if (isStandardDocx) extractedText = await extractTextFromDocx(finalLocalPath);
+        else if (isGoogleDoc || isGoogleSheet || isPlainText) extractedText = fs.readFileSync(finalLocalPath, 'utf8');
 
         if (!extractedText.trim()) {
-             log(`⚠️ Archivo vacío o ilegible: ${fileName}`);
-             continue;
+          log(`⚠️ Archivo vacío o ilegible: ${itemName}`);
+          continue;
         }
 
-        log(`Guardando índice en memoria: ${fileName}...`);
-        
         const stmt = db.prepare(`
-            INSERT INTO library_index (file_id, name, content, last_sync) 
-            VALUES (?, ?, ?, CURRENT_TIMESTAMP)
-            ON CONFLICT(file_id) DO UPDATE SET 
-                name = excluded.name, 
-                content = excluded.content,
-                last_sync = CURRENT_TIMESTAMP
+          INSERT INTO library_index (file_id, name, content, last_sync) 
+          VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+          ON CONFLICT(file_id) DO UPDATE SET 
+            name = excluded.name, 
+            content = excluded.content,
+            last_sync = CURRENT_TIMESTAMP
         `);
-        stmt.run(fileId, fileName, extractedText);
-        
-        log(`✓ Indexado y guardado: ${fileName}`);
+        stmt.run(itemId, itemName, extractedText);
+        log(`✓ Indexado: ${itemName}`);
 
-    } catch (error: any) {
-        log(`❌ Error procesando ${fileName}: ${error.message}`);
+      } catch (error: any) {
+        log(`❌ Error procesando ${itemName}: ${error.message}`);
+      }
     }
-  }
+  };
 
+  await processFolder(config.GOOGLE_DRIVE_FOLDER_ID, 'Raíz');
   log('Sincronización de biblioteca completada.');
 }
 

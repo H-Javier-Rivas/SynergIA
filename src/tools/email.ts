@@ -49,13 +49,18 @@ export const get_email_tool = {
         properties: {
             messageId: {
                 type: 'string',
-                description: 'El ID del mensaje o hilo de correo a recuperar.'
+                description: 'The unique Gmail message/thread ID (string of hex characters). Must be a real ID obtained from search_emails.'
             }
         },
         required: ['messageId']
     },
     execute: async ({ messageId }: { messageId: string }) => {
         try {
+            // Evitar que el LLM use la descripción como valor
+            if (!messageId || messageId.length < 5 || messageId.includes(' ')) {
+                return 'Error: El ID del mensaje no es válido. Debes usar un ID real obtenido de search_emails.';
+            }
+
             // gog gmail get <id> --json
             const resultStr = await runGogCommand(`gmail get ${messageId} --json`);
             if (!resultStr.trim()) return 'No se pudo recuperar el correo.';

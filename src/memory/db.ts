@@ -9,6 +9,9 @@ export const db = new Database(config.DB_PATH);
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
 
+// Inicializar esquemas al cargar el módulo
+initDB();
+
 // Interfaces para Multi-tenant
 export interface User {
   id: number;
@@ -22,6 +25,7 @@ export interface User {
   updated_at: string;
   last_interaction?: string;
   expires_at?: string;
+  metadata?: string;
 }
 
 export interface Plan {
@@ -97,7 +101,9 @@ export function initDB() {
       username TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      last_interaction DATETIME
+      last_interaction DATETIME,
+      expires_at DATETIME,
+      metadata TEXT
     );
 
     CREATE TABLE IF NOT EXISTS plans (
@@ -189,6 +195,19 @@ export function initDB() {
     console.log('🔄 Migrando base de datos: Agregando columna audio_mode a user_prefs...');
     db.exec(`ALTER TABLE user_prefs ADD COLUMN audio_mode TEXT DEFAULT 'text'`);
   }
+
+  const usersInfo = db.prepare("PRAGMA table_info(users)").all() as any[];
+  const hasExpiresAt = usersInfo.some(col => col.name === 'expires_at');
+  if (!hasExpiresAt) {
+    console.log('🔄 Migrando: Agregando columna expires_at a users...');
+    db.exec(`ALTER TABLE users ADD COLUMN expires_at DATETIME`);
+  }
+
+  const hasMetadata = usersInfo.some(col => col.name === 'metadata');
+  if (!hasMetadata) {
+    console.log('🔄 Migrando: Agregando columna metadata a users...');
+    db.exec(`ALTER TABLE users ADD COLUMN metadata TEXT`);
+  }
 }
 
 /**
@@ -253,6 +272,16 @@ export function updateUserPlan(userId: number, plan: string): void {
 export function updateUserStatus(userId: number, status: string): void {
   const stmt = db.prepare('UPDATE users SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?');
   stmt.run(status, userId);
+}
+
+export function updateUserExpiration(userId: number, expiresAt: string | null): void {
+  const stmt = db.prepare('UPDATE users SET expires_at = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?');
+  stmt.run(expiresAt, userId);
+}
+
+export function updateUserMetadata(userId: number, metadata: string | null): void {
+  const stmt = db.prepare('UPDATE users SET metadata = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?');
+  stmt.run(metadata, userId);
 }
 
 export function updateLastInteraction(telegramId: number): void {
@@ -388,7 +417,7 @@ export function incrementUsage(userId: number): void {
     `);
     try {
       stmt.run(userId, currentMonth, nextMonth);
-    } catch (e) {
+    } catch (e: any) {
       console.error(`[DB] Error inserting into user_usage: ${e.message}. userId: ${userId}`);
       const userCheck = db.prepare('SELECT id FROM users WHERE id = ?').get(userId);
       console.log(`[DB] User check result: ${JSON.stringify(userCheck)}`);

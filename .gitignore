@@ -24,3 +24,7 @@ docs/startup/
 # Instaladores pesados
 src/assets/*.exe
 *.exe
+
+# Temp/Credentials
+scratch/
+service-account.json

@@ -156,11 +156,14 @@ registerTool({
   parameters: {
     type: 'object',
     properties: {
-      messageId: { type: 'string', description: 'El ID del mensaje de correo a recuperar.' }
+      messageId: { type: 'string', description: 'The unique Gmail message ID (hex string). Obtain from gmail_search.' }
     },
     required: ['messageId']
   },
   execute: async (args: { messageId: string }) => {
+    if (!args.messageId || args.messageId.length < 5 || args.messageId.includes(' ')) {
+        return 'Error: ID de mensaje no válido. Use el ID real obtenido de gmail_search.';
+    }
     return await runGogCommand(`gmail get ${args.messageId} --json`);
   }
 });

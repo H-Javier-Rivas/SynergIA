@@ -1,6 +1,6 @@
 {
   "name": "synergia",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "SynergIA - Personal AI Agent over Telegram",
   "main": "src/index.ts",
   "type": "module",

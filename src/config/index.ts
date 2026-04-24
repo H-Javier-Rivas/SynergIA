@@ -100,7 +100,7 @@ export const config: Config & { IS_MASTER: boolean } = {
   BOT_NAME: profile.name || process.env.BOT_NAME || 'SynergIA',
   SYSTEM_PROMPT: profile.system_prompt || '',
   KNOWLEDGE: knowledgeContent,
-  GOOGLE_DRIVE_FOLDER_ID: profile.google_drive_folder_id,
+  GOOGLE_DRIVE_FOLDER_ID: profile.google_drive_folder_id || process.env.GOOGLE_DRIVE_FOLDER_ID,
   capabilities: profile.capabilities || { commands: {}, features: {} },
   payment_methods: profile.payment_methods,
   IS_MASTER: instanceId === 'synergia'

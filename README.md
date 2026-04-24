@@ -1,6 +1,12 @@
 SynergIA es un ecosistema de agentes personales inteligentes operando sobre Telegram, diseñado para potenciar la productividad mediante análisis de documentos, síntesis de voz y automatización de búsquedas.
 
-**Versión Actual:** `v2.0.0` (Gestionada en `package.json`)
+**Versión Actual:** `v2.1.0` (Gestionada en `package.json`)
+
+### Novedades v2.1.0
+- **Entrega de Tareas:** Nuevo flujo con comando `/entregar_tarea` y reenvío directo al profesor con metadatos del estudiante (Nombre, Cédula, Sección).
+- **Manual Fijo:** Añadido el comando `/manual` (`/ayuda`, `/help`) con instrucciones pedagógicas claras para los alumnos.
+- **Sincronización de Bibliografía:** Escaneo recursivo de carpetas de Google Drive (incluyendo subcarpetas) para unificada indexación y búsqueda semántica de documentos (RAG).
+
 
 ---
 
@@ -174,4 +180,4 @@ opencode stats
 
 ---
 
-*Documento actualizado el 20 de abril de 2026 (v2.0.0).*
+*Documento actualizado el 23 de abril de 2026 (v2.1.0).*

@@ -15,6 +15,10 @@ import {
     checkUserLimit,
     incrementUsage,
     getUserSubscriptions,
+    updateUserPlan,
+    updateUserStatus,
+    updateUserExpiration,
+    updateUserMetadata,
     db
 } from '../../memory/db.js';
 import { sendLongMessage } from '../utils.js';
@@ -25,6 +29,40 @@ import { pipeline } from 'stream';
 
 const streamPipeline = promisify(pipeline);
 export const messages = new Composer();
+
+messages.on('message', async (ctx, next) => {
+    const userId = ctx.from?.id;
+    if (!userId) return await next();
+    
+    const user = getUserByTelegramId(userId);
+    if (!user) return await next();
+
+    if (user.status === 'esperando_tarea') {
+        const metadataStr = (user as any).metadata;
+        const metadata = metadataStr ? JSON.parse(metadataStr) : { nombre: user.name || 'Desconocido', cedula: 'N/A', seccion: 'N/A' };
+        
+        let header = `📚 <b>NUEVA TAREA ENTREGADA</b>\n`;
+        header += `👤 Alumno: <b>${metadata.nombre}</b>\n`;
+        header += `🆔 CI: <code>${metadata.cedula}</code>\n`;
+        header += `📍 Sección: <b>${metadata.seccion}</b>\n\n`;
+
+        await ctx.reply('✅ He recibido tu tarea y se la he enviado al profesor.', { reply_to_message_id: ctx.message?.message_id });
+        updateUserStatus(user.id, 'active');
+
+        // Forward this message to admins
+        for (const adminId of config.TELEGRAM_ALLOWED_USER_IDS) {
+            try {
+                await ctx.api.sendMessage(adminId, header, { parse_mode: 'HTML' });
+                await ctx.forwardMessage(adminId);
+            } catch (e) {
+                console.error("Error forwarding task", e);
+            }
+        }
+        return; // Detener propagación
+    }
+    
+    return await next();
+});
 
 messages.on('message:document', async (ctx) => {
     const userId = ctx.from.id;
@@ -140,7 +178,7 @@ messages.on(['message:voice', 'message:audio'], async (ctx) => {
         const replyText = await processUserMessage(userId, transcribedText);
         await sendLongMessage(ctx, replyText);
 
-        if (memory.getAudioMode(userId) === 'voice') {
+        if (memory.getAudioMode(user.id) === 'voice') {
             const audioPath = await generateSpeech(replyText);
             if (audioPath) {
                 await ctx.replyWithVoice(new InputFile(audioPath));
@@ -159,6 +197,64 @@ messages.on('message:text', async (ctx) => {
     const user = getUserByTelegramId(userId);
     if (!user) return;
 
+    if (process.env.INSTANCE_ID === 'estadistica' && user.status === 'registro') {
+        const isProfessor = config.TELEGRAM_ALLOWED_USER_IDS.includes(userId);
+        if (isProfessor) {
+            updateUserStatus(user.id, 'active');
+            updateUserPlan(user.id, 'premium');
+            // Continuar al flujo normal de mensajes
+        } else {
+            const textClean = text || '';
+        if (textClean.length > 5) {
+            let auth = false;
+            let matchedStudent: any = null;
+            try {
+                const dataPath = path.resolve(process.cwd(), 'src/data/alumnos.json');
+                if (fs.existsSync(dataPath)) {
+                    const alumnos = JSON.parse(fs.readFileSync(dataPath, 'utf-8')).alumnos;
+                    
+                    // Normalizar entrada del usuario (solo números)
+                    const inputDigits = textClean.replace(/\D/g, '');
+                    
+                    if (inputDigits.length >= 6) {
+                        matchedStudent = alumnos.find((a: any) => {
+                            // Normalizar cédula del JSON (solo números)
+                            const studentDigits = a.cedula.replace(/\D/g, '');
+                            return inputDigits.includes(studentDigits) || studentDigits.includes(inputDigits);
+                        });
+                        if (matchedStudent) auth = true;
+                    }
+                }
+            } catch(e) {
+                console.error("Error validando alumnos.json", e);
+            }
+            
+            if (auth) {
+                updateUserPlan(user.id, 'premium');
+                updateUserStatus(user.id, 'active');
+                updateUserExpiration(user.id, '2026-07-20T23:59:59.000Z');
+                if (matchedStudent) {
+                    updateUserMetadata(user.id, JSON.stringify(matchedStudent));
+                }
+                return await ctx.reply("✨ <b>Validación exitosa</b>.\n\n¡Bienvenido a la tutoría! Tu acceso premium se ha habilitado y será válido hasta el final del semestre (20/07/2026).\n\n¿En qué módulo necesitas ayuda hoy?", { parse_mode: 'HTML' });
+            } else {
+                await ctx.reply("⚠️ No logro ubicar tu cédula en el registro de mis secciones.\n\nHe reenviado tu mensaje directamente al profesor para que él revise tu caso. Por favor, espera su indicación.");
+                const profMsg = `📩 <b>INTENTO DE REGISTRO NO VÁLIDO</b>\n\nUsuario: ${ctx.from.first_name} (@${ctx.from.username || 'sin_usuario'})\nID: <code>${userId}</code>\n\nMensaje enviado:\n<i>"${textClean}"</i>\n\n📝 Si deseas autorizarlo, añade su cédula al archivo <code>src/data/alumnos.json</code> y pídele que envíe el recado nuevamente.`;
+                for (const adminId of config.TELEGRAM_ALLOWED_USER_IDS) {
+                    try {
+                        await ctx.api.sendMessage(adminId, profMsg, { parse_mode: 'HTML' });
+                    } catch (e) {
+                        console.error("Error enviando mensaje al admin", e);
+                    }
+                }
+                return;
+            }
+        } else {
+            return await ctx.reply("Por favor, escribe tus datos completos (incluyendo número de cédula).");
+        }
+    }
+}
+
     const limit = checkUserLimit(userId);
     if (!limit.allowed) return;
 
@@ -167,7 +263,7 @@ messages.on('message:text', async (ctx) => {
     const replyText = await processUserMessage(userId, text || '');
     await sendLongMessage(ctx, replyText);
 
-    if (memory.getAudioMode(userId) === 'voice') {
+    if (memory.getAudioMode(user.id) === 'voice') {
         const audioPath = await generateSpeech(replyText);
         if (audioPath) {
             await ctx.replyWithVoice(new InputFile(audioPath));
