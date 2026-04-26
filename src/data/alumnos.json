@@ -1,5 +1,8 @@
 {
   "alumnos": [
+    { "cedula": "V31881994", "nombre": "ROMERO, ESTEFANY", "seccion": "1" },
+    { "cedula": "V31521805", "nombre": "CAMBRIDGE, ISY", "seccion": "1" },
+    { "cedula": "V31700798", "nombre": "IBARRETO, ALEXANDRE", "seccion": "1" },
     { "cedula": "V11192118", "nombre": "BASTIDAS, MAURYN", "seccion": "1" },
     { "cedula": "V32526126", "nombre": "AULAR GARCÍA, ANGELLY VALENTINA", "seccion": "1" },
     { "cedula": "V32276610", "nombre": "AVILES ROMERO, YESBER GABRIEL", "seccion": "1" },
