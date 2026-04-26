@@ -8,6 +8,7 @@ import '../src/tools/web.js';
 import '../src/tools/library.js';
 import '../src/tools/email.js';
 import '../src/tools/admin.js';
+import '../src/tools/vision.js';
 
 describe('Registro de Herramientas y Funciones (Tools)', () => {
 
@@ -19,6 +20,7 @@ describe('Registro de Herramientas y Funciones (Tools)', () => {
     expect(toolNames).toContain('search_library');
     expect(toolNames).toContain('read_url');
     expect(toolNames).toContain('bots_report');
+    expect(toolNames).toContain('analyze_image');
   });
 
   it('Cada herramienta debe tener descripción y parámetros definidos', () => {

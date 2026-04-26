@@ -14,7 +14,6 @@ import {
     getUserByTelegramId, 
     checkUserLimit,
     incrementUsage,
-    getUserSubscriptions,
     updateUserPlan,
     updateUserStatus,
     updateUserExpiration,
@@ -131,27 +130,8 @@ messages.on('message:document', async (ctx) => {
     }
 });
 
-messages.on('message:photo', async (ctx) => {
-    const userId = ctx.from.id;
-    const user = getUserByTelegramId(userId);
-    if (!user) return;
-
-    const pendingSub = getUserSubscriptions(user.id).find(s => s.status === 'pending');
-    if (pendingSub) {
-        const photo = ctx.message.photo.pop();
-        if (!photo) return;
-
-        const adminMsg = `📸 <b>NUEVO COMPROBANTE</b>\n👤 Usuario: ${user.name || userId}\n🆔 Sub: ${pendingSub.id}`;
-        for (const adminId of config.TELEGRAM_ALLOWED_USER_IDS) {
-            await ctx.api.sendPhoto(adminId, photo.file_id, { caption: adminMsg, parse_mode: 'HTML' });
-        }
-
-        db.prepare('UPDATE subscriptions SET payment_reference = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
-          .run('IMAGEN_ENVIADA', pendingSub.id);
-
-        return await ctx.reply('✅ Comprobante recibido.');
-    }
-});
+// El handler de message:photo se gestiona en ./photos.ts (photos handler dedicado)
+// para separar la lógica de: entrega de tareas, comprobantes de pago y análisis visual.
 
 messages.on(['message:voice', 'message:audio'], async (ctx) => {
     const userId = ctx.from.id;

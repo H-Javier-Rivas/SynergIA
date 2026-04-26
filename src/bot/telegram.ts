@@ -16,6 +16,7 @@ import { executeWorkflowIfMatches } from '../agent/workflows.js';
 import { commands } from './handlers/commands.js';
 import { messages } from './handlers/messages.js';
 import { callbacks } from './handlers/callbacks.js';
+import { photos } from './handlers/photos.js';
 import { sendLongMessage } from './utils.js';
 
 export const bot = new Bot(config.TELEGRAM_BOT_TOKEN);
@@ -33,9 +34,10 @@ bot.use(async (ctx, next) => {
     await next();
 });
 
-// 2. Cargar Handlers
+// 2. Cargar Handlers (orden importa: photos antes que messages para evitar colisión)
 bot.use(commands);
 bot.use(callbacks);
+bot.use(photos);
 bot.use(messages);
 
 // 3. Manejador de Comandos Dinámicos (AI Tools)
