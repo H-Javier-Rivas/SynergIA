@@ -119,6 +119,16 @@ photos.on('message:photo', async (ctx) => {
           `<b>📝 Análisis de tu tarea:</b>\n\n${result.text}`
         );
 
+        // --- NUEVO: Organización automática para el profesor ---
+        try {
+          const { classifyAndSaveTask } = await import('../task-organizer.js');
+          const studentMetadata = user.metadata ? JSON.parse(user.metadata) : { nombre: user.name || 'Alumno_Desconocido' };
+          const category = await classifyAndSaveTask(localPath, result.text, studentMetadata.nombre);
+          console.log(`[Bot] Tarea (Imagen) de ${studentMetadata.nombre} clasificada en: ${category}`);
+        } catch (orgError) {
+          console.error('[Bot] Error organizando tarea de imagen:', orgError);
+        }
+
         if (fs.existsSync(localPath)) fs.unlinkSync(localPath);
       } catch (visionError: any) {
         console.error('[Photos] Error en análisis de tarea:', visionError.message);

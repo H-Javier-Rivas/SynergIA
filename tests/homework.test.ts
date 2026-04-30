@@ -10,7 +10,8 @@ describe('Homework Delivery and Student Metadata Flow', () => {
     });
 
     beforeEach(() => {
-        dbManager.db.exec('DELETE FROM users');
+        dbManager.clearDatabase();
+
         const user = dbManager.createUser({
             telegram_id: studentTelegramId,
             agent_id: 'test',

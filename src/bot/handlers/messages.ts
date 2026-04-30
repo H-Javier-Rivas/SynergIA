@@ -1,4 +1,5 @@
 import { Composer, InputFile, InlineKeyboard } from 'grammy';
+import { hashFileId } from '../utils.js';
 import { config } from '../../config/index.js';
 import { processUserMessage } from '../../agent/loop.js';
 import { transcribeAudio } from '../../agent/transcription.js';
@@ -9,6 +10,7 @@ import {
     extractPagesFromPdf, 
     extractMetadata 
 } from '../../agent/document.js';
+import { analyzePDFWithVision } from '../../agent/pdf-vision.js';
 import { memory } from '../../memory/history.js';
 import { 
     getUserByTelegramId, 
@@ -75,44 +77,67 @@ messages.on('message:document', async (ctx) => {
     const fileId = document.file_id;
     let fileName = document.file_name || 'document';
     const ext = fileName.split('.').pop()?.toLowerCase() || '';
-
-    if (ext !== 'pdf' && ext !== 'docx') {
-        return ctx.reply('Solo PDF y Word (.docx).');
+    
+    console.log(`[Telegram-Document] [${new Date().toISOString()}] INICIO: Recibido documento "${fileName}" (${document.file_size} bytes) de usuario ${userId}`);
+    const imageExtensions = ['jpg', 'jpeg', 'png', 'webp', 'bmp'];
+    
+    if (!['pdf', 'docx', ...imageExtensions].includes(ext)) {
+        return ctx.reply('Solo PDF, Word (.docx) e imágenes (JPG, PNG, WEBP).');
     }
 
     incrementUsage(user.id);
     await ctx.replyWithChatAction('typing');
+    
+    console.log(`[Telegram-Document] [${new Date().toISOString()}] Enviando mensaje "Procesando..."`);
 
     try {
+        console.log(`[Telegram-Document] [${new Date().toISOString()}] INICIO: Descargando archivo desde Telegram`);
         const file = await ctx.api.getFile(fileId);
         const tempDir = path.resolve(process.cwd(), 'temp');
         if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir);
 
         const localPath = path.resolve(tempDir, `doc_${Date.now()}.${ext}`);
         const fileUrl = `https://api.telegram.org/file/bot${config.TELEGRAM_BOT_TOKEN}/${file.file_path}`;
+        
+        const downloadStartTime = new Date();
         const responseData = await fetch(fileUrl);
         // @ts-ignore
         await streamPipeline(responseData.body, fs.createWriteStream(localPath));
+        const downloadTime = (new Date().getTime() - downloadStartTime.getTime()) / 1000;
+        
+        console.log(`[Telegram-Document] FIN: Archivo descargado en ${downloadTime.toFixed(2)}s: ${localPath}`);
 
         let extractedText = '';
         let pages: string[] = [];
         let metadata: any = {};
 
         if (ext === 'pdf') {
-            pages = await extractPagesFromPdf(localPath);
-            extractedText = pages.join('\n\n');
+            await ctx.reply('Procesando tu tarea de estadística...');
+            const pdfAnalysis = await analyzePDFWithVision(localPath);
+            extractedText = pdfAnalysis.combinedText;
+            pages = pdfAnalysis.pageResults.map(result => result.text);
             metadata = await extractMetadata(extractedText.substring(0, 5000));
         } else if (ext === 'docx') {
             extractedText = await extractTextFromDocx(localPath);
             metadata = await extractMetadata(extractedText.substring(0, 5000));
             pages = [extractedText];
+        } else if (imageExtensions.includes(ext)) {
+            await ctx.reply('Analizando imagen...');
+            const { analyzeImage } = await import('../../agent/vision.js');
+            const result = await analyzeImage(localPath, 'general', 'Analiza esta imagen y extrae la información relevante.', `Archivo: ${fileName}`);
+            extractedText = result.text;
+            pages = [result.text];
+            metadata = { tipo: 'imagen', nombre: fileName };
         }
 
         (global as any).tempDocs = (global as any).tempDocs || {};
-        (global as any).tempDocs[fileId] = { pages, metadata, fileName };
+        (global as any).tempDocs = (global as any).tempDocs || {};
+        const fileHash = hashFileId(fileId);
+        (global as any).tempDocs[fileHash] = { fileId, pages, metadata, fileName };
 
         const keyboard = new InlineKeyboard()
-            .text("💾 Guardar en Biblioteca", `save_doc:${fileId}`)
+            .text("💾 Guardar en Biblioteca", `save_doc:${fileHash}`)
+            // save_doc:${fileHash} length should be less than 64 bytes
             .row()
             .text("🔍 Solo analizar", "skip_save");
 
@@ -121,12 +146,44 @@ messages.on('message:document', async (ctx) => {
             reply_markup: keyboard
         });
 
-        const replyText = await processUserMessage(userId, `Analiza: ${extractedText.substring(0, 5000)}`);
+        // --- NUEVO: Clasificación y evaluación con Rúbrica ---
+        let prompt = `Actúa como un profesor de estadística. Evalúa esta tarea:\n${extractedText.substring(0, 5000)}`;
+        let category = 'Otras';
+        try {
+            const { classifyTaskContent, classifyAndSaveTask } = await import('../task-organizer.js');
+            const { RUBRICA_TAREA_1, RUBRICA_TAREA_2 } = await import('../../data/rubricas.js');
+            
+            category = await classifyTaskContent(extractedText);
+            
+            if (category === 'Tarea 1') prompt = `Actúa como un profesor evaluando. Usa EXACTAMENTE esta rúbrica para corregir y dar la nota final desglosada:\n\n${RUBRICA_TAREA_1}\n\nTAREA DEL ALUMNO:\n${extractedText.substring(0, 4000)}`;
+            else if (category === 'Tarea 2') prompt = `Actúa como un profesor evaluando. Usa EXACTAMENTE esta rúbrica para corregir y dar la nota final desglosada:\n\n${RUBRICA_TAREA_2}\n\nTAREA DEL ALUMNO:\n${extractedText.substring(0, 4000)}`;
+            
+            // Guardar copia organizada
+            const studentMetadata = user.metadata ? JSON.parse(user.metadata) : { nombre: user.name || 'Alumno_Desconocido' };
+            await classifyAndSaveTask(localPath, extractedText, studentMetadata.nombre);
+            console.log(`[Bot] Tarea clasificada en: ${category}`);
+        } catch (orgError) {
+            console.error('[Bot] Error en organización/clasificación:', orgError);
+        }
+
+        console.log(`[Telegram-Document] [${new Date().toISOString()}] INICIO: Procesando texto extraído con el agente LLM`);
+        const llmStartTime = new Date();
+        const replyText = await processUserMessage(userId, prompt);
+        const llmEndTime = new Date();
+        const llmTime = (llmEndTime.getTime() - llmStartTime.getTime()) / 1000;
+        console.log(`[Telegram-Document] [${new Date().toISOString()}] FIN: Texto procesado por el agente LLM en ${llmTime.toFixed(2)}s`);
+        
         await sendLongMessage(ctx, replyText);
 
-        if (fs.existsSync(localPath)) fs.unlinkSync(localPath);
+        if (fs.existsSync(localPath)) {
+            console.log(`[Telegram-Document] [${new Date().toISOString()}] Eliminando archivo temporal: ${localPath}`);
+            fs.unlinkSync(localPath);
+        }
+        
+        const totalTime = (new Date().getTime() - downloadStartTime.getTime()) / 1000;
+        console.log(`[Telegram-Document] [${new Date().toISOString()}] COMPLETO: Procesamiento finalizado en ${totalTime.toFixed(2)}s`);
     } catch (error: any) {
-        console.error(error);
+        console.error(`[Telegram-Document] [${new Date().toISOString()}] ❌ ERROR: ${error.message}`, error);
     }
 });
 

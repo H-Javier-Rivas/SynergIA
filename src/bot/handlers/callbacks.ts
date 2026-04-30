@@ -105,29 +105,30 @@ callbacks.on("callback_query:data", async (ctx) => {
     if (!user || !data) return;
 
     if (data.startsWith("save_doc:")) {
-        const fileId = data.split(":")[1];
-        const docData = (global as any).tempDocs?.[fileId];
+        const fileHash = data.split(":")[1];
+        const docData = (global as any).tempDocs?.[fileHash];
 
         if (docData) {
+            const { fileId, pages, metadata, fileName } = docData;
             await ctx.answerCallbackQuery({ text: "Guardando en biblioteca..." });
-            await ctx.editMessageText(`⌛ Indexando páginas de <b>${docData.fileName}</b>...`, { parse_mode: 'HTML' });
+            await ctx.editMessageText(`⌛ Indexando páginas de <b>${fileName}</b>...`, { parse_mode: 'HTML' });
 
             try {
-                for (let i = 0; i < docData.pages.length; i++) {
+                for (let i = 0; i < pages.length; i++) {
                     saveToPersonalLibrary({
                         user_id: user.id,
-                        name: docData.fileName,
-                        content: docData.pages[i],
+                        name: fileName,
+                        content: pages[i],
                         page_number: i + 1,
-                        author: docData.metadata.author || 'Desconocido',
-                        year: docData.metadata.year || 'S/F',
-                        title: docData.metadata.title || docData.fileName,
-                        publisher: docData.metadata.publisher || 'Desconocido'
+                        author: metadata.author || 'Desconocido',
+                        year: metadata.year || 'S/F',
+                        title: metadata.title || fileName,
+                        publisher: metadata.publisher || 'Desconocido'
                     });
                 }
                 
-                await ctx.editMessageText(`✅ <b>${docData.fileName}</b> se ha guardado correctamente.`, { parse_mode: 'HTML' });
-                delete (global as any).tempDocs[fileId];
+                await ctx.editMessageText(`✅ <b>${fileName}</b> se ha guardado correctamente.`, { parse_mode: 'HTML' });
+                delete (global as any).tempDocs[fileHash];
             } catch (e) {
                 console.error('Error saving to personal library:', e);
                 await ctx.editMessageText("❌ Error al guardar en la biblioteca.");

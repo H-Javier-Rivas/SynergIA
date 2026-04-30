@@ -52,10 +52,23 @@ describe('Motor de Visión — analyzeImage (fetch mockeado)', () => {
   });
 
   it('retorna VisionResult correcto con fetch exitoso (primer modelo gratuito)', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
-      json: async () => ({
-        choices: [{ message: { content: 'Análisis mock exitoso.' } }],
-      }),
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(async (url: string) => {
+      if (url.includes('generativelanguage.googleapis.com')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            candidates: [{ content: { parts: [{ text: 'Análisis mock exitoso.' }] } }],
+          }),
+        };
+      }
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          choices: [{ message: { content: 'Análisis mock exitoso.' } }],
+        }),
+      };
     }));
 
     const { analyzeImage } = await import('../src/agent/vision.js');
@@ -63,19 +76,25 @@ describe('Motor de Visión — analyzeImage (fetch mockeado)', () => {
 
     expect(result.text).toBe('Análisis mock exitoso.');
     expect(result.wasPaidFallback).toBe(false);
-    expect(result.modelUsed).toContain(':free');
+    expect(result.modelUsed).toMatch(/direct|:free/);
   });
 
   it('hace fallback a modelo de pago cuando todos los gratuitos dan 429', async () => {
-    const FREE_MODEL_COUNT = 3;
+    const FALLBACK_THRESHOLD = 2; // Solo fallan los 2 primeros modelos (Gemini Direct y OpenRouter Primary)
     let callCount = 0;
 
-    vi.stubGlobal('fetch', vi.fn().mockImplementation(async () => {
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(async (url: string) => {
       callCount++;
-      if (callCount <= FREE_MODEL_COUNT) {
-        return { json: async () => ({ error: { code: 429, message: 'Rate limit exceeded' } }) };
+      if (url.includes('generativelanguage.googleapis.com')) {
+        return { ok: false, status: 429, json: async () => ({ error: { code: 429, message: 'Rate limit exceeded' } }) };
+      }
+      // Primeros intentos fallan (simulado)
+      if (callCount <= FALLBACK_THRESHOLD) {
+        return { ok: false, status: 429, json: async () => ({ error: { code: 429, message: 'Rate limit exceeded' } }) };
       }
       return {
+        ok: true,
+        status: 200,
         json: async () => ({
           choices: [{ message: { content: 'Análisis con modelo de pago.' } }],
         }),
@@ -101,10 +120,11 @@ describe('Motor de Visión — analyzeImage (fetch mockeado)', () => {
   });
 
   it('analyzeHomework retorna análisis con fetch exitoso', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
-      json: async () => ({
-        choices: [{ message: { content: 'Corrección pedagógica.' } }],
-      }),
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(async (url: string) => {
+      if (url.includes('generativelanguage.googleapis.com')) {
+        return { ok: true, status: 200, json: async () => ({ candidates: [{ content: { parts: [{ text: 'Corrección pedagógica.' }] } }] }) };
+      }
+      return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content: 'Corrección pedagógica.' } }] }) };
     }));
 
     const { analyzeHomework } = await import('../src/agent/vision.js');
@@ -171,12 +191,15 @@ describe('Tool de Visión — analyze_image en toolsRegistry', () => {
   });
 
   it('execute añade footer de "modelo premium" cuando wasPaidFallback=true', async () => {
-    const FREE_COUNT = 3;
+    const FALLBACK_THRESHOLD = 2;
     let n = 0;
-    vi.stubGlobal('fetch', vi.fn().mockImplementation(async () => {
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(async (url: string) => {
       n++;
-      if (n <= FREE_COUNT) return { json: async () => ({ error: { code: 429, message: 'rate limit' } }) };
-      return { json: async () => ({ choices: [{ message: { content: 'Respuesta premium.' } }] }) };
+      if (url.includes('generativelanguage.googleapis.com')) {
+        return { ok: false, status: 429, json: async () => ({ error: { code: 429, message: 'rate limit' } }) };
+      }
+      if (n <= FALLBACK_THRESHOLD) return { ok: false, status: 429, json: async () => ({ error: { code: 429, message: 'rate limit' } }) };
+      return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content: 'Respuesta premium.' } }] }) };
     }));
 
     const { getTool } = await import('../src/tools/index.js');
@@ -190,10 +213,11 @@ describe('Tool de Visión — analyze_image en toolsRegistry', () => {
   });
 
   it('execute NO añade footer con modelo gratuito', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
-      json: async () => ({
-        choices: [{ message: { content: 'Respuesta gratuita.' } }],
-      }),
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(async (url: string) => {
+      if (url.includes('generativelanguage.googleapis.com')) {
+        return { ok: true, status: 200, json: async () => ({ candidates: [{ content: { parts: [{ text: 'Respuesta gratuita.' }] } }] }) };
+      }
+      return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content: 'Respuesta gratuita.' } }] }) };
     }));
 
     const { getTool } = await import('../src/tools/index.js');

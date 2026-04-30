@@ -21,6 +21,7 @@ export interface Config {
   TELEGRAM_ALLOWED_USER_IDS: number[];
   GROQ_API_KEY: string;
   OPENROUTER_API_KEY?: string;
+  OPENROUTER_API_KEY_PAID?: string;
   OPENROUTER_MODEL: string;
   DB_PATH: string;
   GOOGLE_APPLICATION_CREDENTIALS?: string;
@@ -29,6 +30,8 @@ export interface Config {
 
   // Perfil del Bot (vienen de JSON)
   BOT_NAME: string;
+  BOT_VERSION: string;
+  BOT_DESCRIPTION: string;
   SYSTEM_PROMPT: string;
   KNOWLEDGE: string;
   GOOGLE_DRIVE_FOLDER_ID?: string;
@@ -90,6 +93,7 @@ export const config: Config & { IS_MASTER: boolean } = {
   TELEGRAM_ALLOWED_USER_IDS: parseAllowedUsers(process.env.TELEGRAM_ALLOWED_USER_IDS),
   GROQ_API_KEY: process.env.GROQ_API_KEY as string,
   OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY,
+  OPENROUTER_API_KEY_PAID: process.env.OPENROUTER_API_KEY_PAID,
   OPENROUTER_MODEL: process.env.OPENROUTER_MODEL || 'openrouter/free',
   DB_PATH: process.env.DB_PATH || (instanceId !== 'synergia' ? `./memory_${instanceId}.db` : './memory.db'),
   GOOGLE_APPLICATION_CREDENTIALS: process.env.GOOGLE_APPLICATION_CREDENTIALS,
@@ -98,6 +102,8 @@ export const config: Config & { IS_MASTER: boolean } = {
 
   // Valores del Perfil
   BOT_NAME: profile.name || process.env.BOT_NAME || 'SynergIA',
+  BOT_VERSION: profile.version || '1.0.0',
+  BOT_DESCRIPTION: profile.description || '',
   SYSTEM_PROMPT: profile.system_prompt || '',
   KNOWLEDGE: knowledgeContent,
   GOOGLE_DRIVE_FOLDER_ID: profile.google_drive_folder_id || process.env.GOOGLE_DRIVE_FOLDER_ID,

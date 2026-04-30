@@ -1,7 +1,7 @@
 {
-  "name": "synergia",
-  "version": "2.1.0",
-  "description": "SynergIA - Personal AI Agent over Telegram",
+  "name": "synergia-ecosystem",
+  "version": "3.0.0",
+  "description": "SynergIA Bot Ecosystem - Multi-agent AI System Managed by SynergIA",
   "main": "src/index.ts",
   "type": "module",
   "scripts": {
@@ -24,7 +24,10 @@
     "grammy": "^1.41.1",
     "groq-sdk": "^0.37.0",
     "mammoth": "^1.11.0",
-    "pdf-parse": "^1.1.1"
+    "pdf-lib": "^1.17.1",
+    "pdf-parse": "^1.1.4",
+    "pdf2pic": "^3.2.0",
+    "sharp": "^0.34.5"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",

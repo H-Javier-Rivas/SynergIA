@@ -70,3 +70,10 @@ export async function sendLongMessage(ctx: any, text: string) {
         }
     }
 }
+
+import crypto from 'crypto';
+
+export function hashFileId(fileId: string): string {
+    const hash = crypto.createHash('sha256').update(fileId).digest('hex');
+    return hash.substring(0, 32);
+}

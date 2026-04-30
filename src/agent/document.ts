@@ -90,7 +90,7 @@ ${sample}`;
 
         if (response && response.content) {
             // Limpiar posible formato markdown si el LLM lo incluye
-            const jsonStr = response.content.replace(/```json/g, '').replace(/```/g, '').replace(/```/g, '').trim();
+            const jsonStr = (response.content.match(/\{.*\}/s) || [','])[0];
             try {
                 return JSON.parse(jsonStr);
             } catch (e) {

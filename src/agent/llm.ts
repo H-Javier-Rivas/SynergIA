@@ -1,192 +1,136 @@
-import { Groq } from 'groq-sdk';
 import { config } from '../config/index.js';
-
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import Groq from "groq-sdk";
 
-const groq = new Groq({ 
-    apiKey: config.GROQ_API_KEY,
-    defaultHeaders: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-    }
-});
+const OPENROUTER_ENDPOINT = 'https://openrouter.ai/api/v1/chat/completions';
+const PRIMARY_MODEL = 'google/gemini-2.0-flash-001';
+const SECONDARY_MODEL = 'google/gemini-2.0-flash-lite-001';
 
+// Inicializar clientes
 const genAI = config.GEMINI_API_KEY ? new GoogleGenerativeAI(config.GEMINI_API_KEY) : null;
+const groq = config.GROQ_API_KEY ? new Groq({ apiKey: config.GROQ_API_KEY }) : null;
 
-// El fallback es opcional si el usuario provee una clave de openrouter
-const openRouterEndpoint = 'https://openrouter.ai/api/v1/chat/completions';
-
+/**
+ * Motor de completado de chat robusto.
+ * Estrategia: Gemini Directo (Flash/Pro) -> Groq (Llama 3.3) -> OpenRouter
+ */
 export async function chatCompletion(messages: any[], tools: any[] = []) {
-  try {
-    // Intentar primero con Groq
-    const response = await groq.chat.completions.create({
-      model: 'llama-3.3-70b-versatile', 
-      messages,
-      tools: tools.length > 0 ? tools : undefined,
-      tool_choice: tools.length > 0 ? 'auto' : undefined,
-    });
-    
-    const msg = response.choices[0].message;
-    if (msg.content || (msg.tool_calls && msg.tool_calls.length > 0)) {
-      return msg;
-    }
-    
-    throw new Error("Empty response");
-  } catch (error: any) {
-    // Fallback 1: OpenRouter
-    if (config.OPENROUTER_API_KEY && config.OPENROUTER_API_KEY !== "SUTITUYE POR EL TUYO") {
+  const paidKey = config.OPENROUTER_API_KEY_PAID || config.OPENROUTER_API_KEY;
+
+  // --- PASO 1: Gemini Directo (Google AI Studio) ---
+  if (genAI) {
+    const geminiModels = ["gemini-1.5-flash", "gemini-1.5-pro", "gemini-2.0-flash-exp"];
+    for (const modelName of geminiModels) {
       try {
-        console.log('Intentando fallback a OpenRouter...');
-        return await fallbackOpenRouter(messages, tools);
-      } catch (orError) {
-        console.error('Fallback de OpenRouter falló:', orError);
+        console.log(`[LLM] Intentando Gemini Directo (${modelName})...`);
+        return await callGeminiDirect(modelName, messages, tools);
+      } catch (geminiErr: any) {
+        console.warn(`[LLM] Falló Gemini Directo (${modelName}): ${geminiErr.message}`);
+        // Si es un error de cuota o región, seguimos al siguiente modelo o proveedor
       }
     }
+  }
 
-    // Fallback 2: Gemini
-    if (genAI) {
+  // --- PASO 2: Groq (Llama 3.3 70B - Rápido y Gratis, pero bloqueado en algunas regiones) ---
+  if (groq) {
+    try {
+      console.log(`[LLM] Intentando fallback a Groq (llama-3.3-70b-versatile)...`);
+      return await callGroq(messages, tools);
+    } catch (groqErr: any) {
+      console.warn(`[LLM] Falló Groq: ${groqErr.message}`);
+    }
+  }
+
+  // --- PASO 3: OpenRouter ---
+  if (paidKey) {
+    const models = [PRIMARY_MODEL, SECONDARY_MODEL, "deepseek/deepseek-chat"];
+    for (const model of models) {
         try {
-            console.log('Intentando fallback final a Gemini...');
-            return await fallbackGemini(messages, tools);
-        } catch (gemError) {
-            console.error('Fallback de Gemini falló:', gemError);
+            console.log(`[LLM] Intentando fallback a OpenRouter ${model}...`);
+            return await callOpenRouter(model, messages, tools, paidKey);
+        } catch (err: any) {
+            console.warn(`[LLM] Falló OpenRouter ${model}: ${err.message}`);
         }
     }
   }
+
+  throw new Error('Todos los proveedores de IA están saturados. Por favor, reintenta en un momento.');
+}
+
+async function callGroq(messages: any[], tools: any[]) {
+  const sanitizedHistory = messages.map(msg => ({
+    role: msg.role,
+    content: msg.content || "",
+    ...(msg.tool_calls && { tool_calls: msg.tool_calls }),
+    ...(msg.tool_call_id && { tool_call_id: msg.tool_call_id }),
+    ...(msg.name && { name: msg.name })
+  }));
+
+  const payload: any = {
+    messages: sanitizedHistory,
+    model: "llama-3.3-70b-versatile",
+    max_tokens: 4000
+  };
   
-  throw new Error('Nuestros servidores están experimentando mucha demanda en este momento. Por favor, reintenta en unos segundos.');
+  if (tools && tools.length > 0) {
+      payload.tools = tools;
+  }
+
+  const chatCompletion = await groq!.chat.completions.create(payload);
+  return chatCompletion.choices[0]?.message;
 }
 
-async function fallbackGemini(messages: any[], tools: any[]) {
-    // Lista de modelos de Gemini a probar en orden de estabilidad/capacidad
-    const geminiModels = ["gemini-flash-latest", "gemini-flash-lite-latest", "gemini-pro-latest"];
-    let lastError = null;
+async function callOpenRouter(model: string, messages: any[], tools: any[], apiKey: string) {
+  const sanitizedHistory = messages.map(msg => ({
+    role: msg.role,
+    content: msg.content || "",
+    ...(msg.tool_calls && { tool_calls: msg.tool_calls }),
+    ...(msg.tool_call_id && { tool_call_id: msg.tool_call_id }),
+    ...(msg.name && { name: msg.name })
+  }));
 
-    for (const modelName of geminiModels) {
-        try {
-            console.log(`Intentando chat con Gemini: ${modelName}...`);
-            const systemInstruction = messages.find(m => m.role === 'system')?.content;
-            
-            const model = genAI!.getGenerativeModel({ 
-                model: modelName,
-                systemInstruction: systemInstruction
-            });
+  const payload: any = { 
+    model, 
+    messages: sanitizedHistory,
+    max_tokens: 4000
+  };
+  if (tools.length > 0) payload.tools = tools;
 
-            // Convertir historial de OpenAI/Groq -> Formato Gemini
-            const contents = messages
-                .filter(m => m.role !== 'system')
-                .map(m => ({
-                    role: m.role === 'assistant' ? 'model' : 'user',
-                    parts: [{ text: m.content || "" }]
-                }));
+  const response = await fetch(OPENROUTER_ENDPOINT, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+      'X-Title': 'SynergIA Professional'
+    },
+    body: JSON.stringify(payload)
+  });
 
-            const result = await model.generateContent({ contents });
-
-            const response = result.response;
-            const text = response.text();
-            
-            if (text) {
-                return {
-                    role: 'assistant',
-                    content: text,
-                    tool_calls: []
-                };
-            }
-        } catch (err: any) {
-            lastError = err;
-            console.error(`Fallo con Gemini (${modelName}):`, err.message);
-            // Si es error de saturacion o saturacion de cuota, probamos el que sigue
-            if (err.message.includes("503") || err.message.includes("429")) {
-                continue;
-            }
-            break;
-        }
-    }
-    throw lastError || new Error("Todos los fallbacks de Gemini fallaron.");
+  const data = await response.json();
+  if (data.error) {
+    throw new Error(`[OpenRouter ${model}] ${data.error.message || 'Error'}`);
+  }
+  return data.choices?.[0]?.message;
 }
 
-async function fallbackOpenRouter(messages: any[], tools: any[]) {
-    // Lista de modelos gratuitos de OpenRouter (actualizado: 2026-03-26)
-    // Ordenados de mayor a menor capacidad para maximizar calidad de respuesta
-    const fallbackModels = [
-        config.OPENROUTER_MODEL,                              // Modelo configurado en .env
-        "google/gemma-3-27b-it:free",                         // 27B - Confiable
-        "meta-llama/llama-3.3-70b-instruct:free"              // 70B - Muy capaz
-    ].filter((m, i, self) => m && self.indexOf(m) === i); // Únicos
+async function callGeminiDirect(modelName: string, messages: any[], tools: any[]) {
+  const systemInstruction = messages.find(m => m.role === 'system')?.content;
+  const model = genAI!.getGenerativeModel({ model: modelName, systemInstruction });
 
-    const sanitizedHistory = messages.map(msg => {
-        const cleaned: any = { role: msg.role, content: msg.content };
-        if (msg.tool_calls) cleaned.tool_calls = msg.tool_calls;
-        if (msg.tool_call_id) cleaned.tool_call_id = msg.tool_call_id;
-        if (msg.name) cleaned.name = msg.name;
-        return cleaned;
-    });
+  // Convertir historial a formato Gemini
+  const contents = messages
+    .filter(m => m.role !== 'system' && m.role !== 'tool')
+    .map(m => ({
+      role: m.role === 'assistant' ? 'model' : 'user',
+      parts: [{ text: m.content || "" }]
+    }));
 
-    let lastError = null;
-
-    for (const model of fallbackModels) {
-        try {
-            console.log(`Intentando OpenRouter con modelo: ${model}...`);
-            const payload: any = {
-                model: model,
-                messages: sanitizedHistory
-            };
-
-            if (tools.length > 0) {
-                payload.tools = tools;
-            }
-
-            let response = await fetch(openRouterEndpoint, {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${config.OPENROUTER_API_KEY}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify(payload)
-            });
-
-            let data = await response.json();
-            
-            // Si falla por falta de soporte de herramientas, intentamos de nuevo sin herramientas para este modelo
-            if (data.error && (data.error.code === 400 || data.error.code === 404) && 
-                (data.error.message.includes("tool") || data.error.message.includes("function"))) {
-                console.warn(`⚠️ Modelo ${model} no soporta herramientas. Reintentando sin ellas...`);
-                delete payload.tools;
-                response = await fetch(openRouterEndpoint, {
-                    method: 'POST',
-                    headers: {
-                        'Authorization': `Bearer ${config.OPENROUTER_API_KEY}`,
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify(payload)
-                });
-                data = await response.json();
-            }
-
-            if (data.error) {
-                const code = data.error.code;
-                const msg = data.error.message || "";
-                console.log(`Error en modelo ${model}: ${code} - ${msg}`);
-                
-                // Si es un error de cuota o modelo no encontrado, probamos el siguiente
-                if (code === 429 || code === 404 || code === 400) {
-                    lastError = new Error(`OpenRouter Error (${model}): ${msg}`);
-                    continue; 
-                }
-                throw new Error(`OpenRouter API Error: ${msg}`);
-            }
-
-            if (!data.choices || data.choices.length === 0) {
-                console.log(`Modelo ${model} no devolvió respuestas.`);
-                continue;
-            }
-            
-            return data.choices[0].message;
-
-        } catch (err) {
-            console.error(`Fallo crítico con modelo ${model}:`, err);
-            lastError = err;
-        }
-    }
-
-    throw lastError || new Error("Todos los fallbacks de OpenRouter fallaron.");
+  const result = await model.generateContent({ contents });
+  const response = result.response;
+  
+  return {
+    role: 'assistant',
+    content: response.text(),
+    tool_calls: []
+  };
 }

@@ -9,7 +9,8 @@ module.exports = {
         NODE_ENV: "development",
       },
       autorestart: true,
-      max_memory_restart: '1G'
+      max_memory_restart: '1G',
+      node_args: ["--no-deprecation"]
     },
     {
       name: "synergia-tutor",
@@ -21,7 +22,8 @@ module.exports = {
         INSTANCE_ID: "tutor"
       },
       autorestart: true,
-      max_memory_restart: '1G'
+      max_memory_restart: '1G',
+      node_args: ["--no-deprecation"]
     },
     {
       name: "synergia-estadistica",
@@ -33,7 +35,8 @@ module.exports = {
         INSTANCE_ID: "estadistica"
       },
       autorestart: true,
-      max_memory_restart: '1G'
+      max_memory_restart: '1G',
+      node_args: ["--no-deprecation"]
     }
   ],
 };

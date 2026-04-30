@@ -334,3 +334,17 @@ El bot entrará en modo de entrega y podrás enviar tu archivo, foto o texto, el
 
     await ctx.reply(manualMsg, { parse_mode: 'HTML' });
 });
+
+commands.command(['about', 'version', 'info'], async (ctx) => {
+    const aboutMsg = `
+🤖 <b>${config.BOT_NAME}</b>
+Versión del Bot: <code>v${config.BOT_VERSION}</code>
+<i>${config.BOT_DESCRIPTION}</i>
+
+🌐 <b>Powered by SynergIA Bot Ecosystem</b>
+Ecosystem Core: <code>v3.0.0</code>
+Gestión Multi-agente basada en IA.
+    `.trim();
+
+    await ctx.reply(aboutMsg, { parse_mode: 'HTML' });
+});
