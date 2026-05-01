@@ -10,6 +10,7 @@ import '../tools/library.js';
 import '../tools/email.js';
 import '../tools/admin.js';
 import '../tools/vision.js';
+import '../tools/telegram_actions.js';
 
 
 
@@ -24,7 +25,9 @@ Funcionas como bot de Telegram y tu estilo de comunicación es sumamente elegant
 REGLA CRUCIAL SOBRE HERRAMIENTAS:
 1. Jamás utilices la descripción de los argumentos de una función como si fueran los valores a pasar.
 2. Si una herramienta requiere un ID (como get_email), no lo inventes. Si no lo tienes, utiliza primero una herramienta de búsqueda (como search_emails) para encontrar el ID correcto.
-3. Si el usuario pide "ver un mensaje" se suele referir al historial de la conversación o a un texto previo, NO a un correo de Gmail a menos que mencione explícitamente "correo" o "Gmail".`;
+3. Si el usuario pide "ver un mensaje" se suele referir al historial de la conversación o a un texto previo, NO a un correo de Gmail a menos que mencione explícitamente "correo" o "Gmail".
+4. Tienes la capacidad de enviar comunicados oficiales al grupo de Telegram del curso usando la herramienta 'send_group_message'. Úsala siempre que el profesor te pida informar o publicar algo en el grupo.
+5. REGLA DE ORO: Si el profesor te pide enviar algo al grupo, DEBES llamar a la herramienta 'send_group_message' de inmediato. El ID del grupo ya está configurado y verificado, NO necesitas preguntarlo ni validarlo. Nunca digas "He enviado el mensaje" si no has ejecutado la herramienta con éxito.`;
 
 const formattingRule = `\n\nREGLA DE FORMATO CRITICA:
 - Usa EXCLUSIVAMENTE etiquetas HTML soportadas por Telegram (<b>, <i>, <u>, <s>, <code>, <pre>, <a>, <blockquote>) para dar formato.
@@ -50,6 +53,12 @@ const systemPrompt = basePrompt + knowledgePrompt;
 
         const dynamicSystemPrompt = systemPrompt + roleContext;
 
+        // 1.5 Hint de Emergencia para Grupos
+        let finalSystemPrompt = dynamicSystemPrompt;
+        if (text.toLowerCase().includes('grupo') && (text.toLowerCase().includes('envía') || text.toLowerCase().includes('informa'))) {
+            finalSystemPrompt += "\n\n[INSTRUCCIÓN DE PRIORIDAD MÁXIMA] El usuario quiere enviar un mensaje al grupo. DEBES llamar a la herramienta 'send_group_message' AHORA MISMO con el contenido del mensaje. No preguntes, no pidas confirmación, solo ejecútala.";
+        }
+
         // 2. Guardar mensaje del usuario
         await memory.saveMessage({
             user_id: dbUserId,
@@ -67,7 +76,7 @@ const systemPrompt = basePrompt + knowledgePrompt;
         
         // Formatear el historial para el LLM
         const _messages: any[] = [
-            { role: 'system', content: dynamicSystemPrompt },
+            { role: 'system', content: finalSystemPrompt },
             ...history.map(m => {
                 const base: any = { role: m.role, content: m.content || "" };
                 if (m.tool_calls) base.tool_calls = m.tool_calls;
@@ -104,9 +113,12 @@ const systemPrompt = basePrompt + knowledgePrompt;
                 } else {
                     try {
                         const args = JSON.parse(toolCall.function.arguments || '{}');
+                        console.log(`[TOOL] Ejecutando: ${functionName} con args:`, args);
                         result = await tool.execute(args, telegramId);
+                        console.log(`[TOOL] Resultado de ${functionName}:`, result);
                     } catch (e: any) {
                         result = `Error ejecutando herramienta: ${e.message}`;
+                        console.error(`[TOOL] Error en ${functionName}:`, e);
                     }
                 }
                 

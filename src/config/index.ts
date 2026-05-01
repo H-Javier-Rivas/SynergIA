@@ -27,6 +27,7 @@ export interface Config {
   GOOGLE_APPLICATION_CREDENTIALS?: string;
   ELEVENLABS_API_KEY?: string;
   GEMINI_API_KEY?: string;
+  TELEGRAM_GROUP_ID?: string;
 
   // Perfil del Bot (vienen de JSON)
   BOT_NAME: string;
@@ -99,6 +100,7 @@ export const config: Config & { IS_MASTER: boolean } = {
   GOOGLE_APPLICATION_CREDENTIALS: process.env.GOOGLE_APPLICATION_CREDENTIALS,
   ELEVENLABS_API_KEY: process.env.ELEVENLABS_API_KEY,
   GEMINI_API_KEY: process.env.GEMINI_API_KEY,
+  TELEGRAM_GROUP_ID: process.env.TELEGRAM_GROUP_ID,
 
   // Valores del Perfil
   BOT_NAME: profile.name || process.env.BOT_NAME || 'SynergIA',

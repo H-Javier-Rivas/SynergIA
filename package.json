@@ -1,6 +1,6 @@
 {
   "name": "synergia-ecosystem",
-  "version": "3.0.0",
+  "version": "3.0.1",
   "description": "SynergIA Bot Ecosystem - Multi-agent AI System Managed by SynergIA",
   "main": "src/index.ts",
   "type": "module",

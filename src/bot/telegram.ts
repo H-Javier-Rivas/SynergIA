@@ -26,6 +26,11 @@ bot.use(async (ctx, next) => {
     const userId = ctx.from?.id;
     if (!userId) return;
 
+    // Log para depuración de IDs de Chat (útil para grupos)
+    if (ctx.chat && ctx.chat.type !== 'private') {
+        console.log(`[TELEGRAM] Mensaje en grupo "${(ctx.chat as any).title}" - Chat ID: ${ctx.chat.id}`);
+    }
+
     const user = getUserByTelegramId(userId);
     if (user) {
         updateLastInteraction(userId);

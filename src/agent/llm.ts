@@ -8,6 +8,7 @@ const SECONDARY_MODEL = 'google/gemini-2.0-flash-lite-001';
 
 // Inicializar clientes
 const genAI = config.GEMINI_API_KEY ? new GoogleGenerativeAI(config.GEMINI_API_KEY) : null;
+// No forzamos apiVersion aquí, dejaremos que el SDK decida pero usaremos nombres de modelos estándar.
 const groq = config.GROQ_API_KEY ? new Groq({ apiKey: config.GROQ_API_KEY }) : null;
 
 /**
@@ -19,7 +20,7 @@ export async function chatCompletion(messages: any[], tools: any[] = []) {
 
   // --- PASO 1: Gemini Directo (Google AI Studio) ---
   if (genAI) {
-    const geminiModels = ["gemini-1.5-flash", "gemini-1.5-pro", "gemini-2.0-flash-exp"];
+    const geminiModels = ["gemini-1.5-flash", "gemini-1.5-pro"];
     for (const modelName of geminiModels) {
       try {
         console.log(`[LLM] Intentando Gemini Directo (${modelName})...`);
@@ -96,12 +97,15 @@ async function callOpenRouter(model: string, messages: any[], tools: any[], apiK
   };
   if (tools.length > 0) payload.tools = tools;
 
+  console.log(`[LLM] Enviando ${tools.length} herramientas a OpenRouter (${model})...`);
+
   const response = await fetch(OPENROUTER_ENDPOINT, {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${apiKey}`,
       'Content-Type': 'application/json',
-      'X-Title': 'SynergIA Professional'
+      'X-Title': 'SynergIA Professional',
+      'HTTP-Referer': 'https://github.com/H-Javier-Rivas/SynergIA'
     },
     body: JSON.stringify(payload)
   });
@@ -115,18 +119,78 @@ async function callOpenRouter(model: string, messages: any[], tools: any[], apiK
 
 async function callGeminiDirect(modelName: string, messages: any[], tools: any[]) {
   const systemInstruction = messages.find(m => m.role === 'system')?.content;
-  const model = genAI!.getGenerativeModel({ model: modelName, systemInstruction });
+  
+  // Mapear herramientas al formato de Gemini
+  const geminiTools = tools.length > 0 ? [{
+    functionDeclarations: tools.map(t => ({
+      name: t.function.name,
+      description: t.function.description,
+      parameters: t.function.parameters
+    }))
+  }] : undefined;
 
-  // Convertir historial a formato Gemini
+  // Intentar con nombre limpio (el SDK suele preferir gemini-1.5-flash sin prefijo models/)
+  const model = genAI!.getGenerativeModel({ 
+    model: modelName, 
+    systemInstruction,
+    tools: geminiTools as any
+  });
+
+  // Convertir historial a formato Gemini (incluyendo resultados de herramientas previas)
   const contents = messages
-    .filter(m => m.role !== 'system' && m.role !== 'tool')
-    .map(m => ({
-      role: m.role === 'assistant' ? 'model' : 'user',
-      parts: [{ text: m.content || "" }]
-    }));
+    .filter(m => m.role !== 'system')
+    .map(m => {
+      const parts: any[] = [];
+      if (m.content) parts.push({ text: m.content });
+      
+      if (m.tool_calls) {
+        m.tool_calls.forEach((tc: any) => {
+          parts.push({
+            functionCall: {
+              name: tc.function.name,
+              args: JSON.parse(tc.function.arguments || '{}')
+            }
+          });
+        });
+      }
+
+      if (m.role === 'tool') {
+        return {
+          role: 'function',
+          parts: [{
+            functionResponse: {
+              name: m.name || 'unknown',
+              response: { result: m.content }
+            }
+          }]
+        };
+      }
+
+      return {
+        role: m.role === 'assistant' ? 'model' : 'user',
+        parts
+      };
+    });
 
   const result = await model.generateContent({ contents });
   const response = result.response;
+  const candidate = response.candidates?.[0];
+  const functionCalls = candidate?.content.parts.filter(p => p.functionCall);
+
+  if (functionCalls && functionCalls.length > 0) {
+    return {
+      role: 'assistant',
+      content: null,
+      tool_calls: functionCalls.map((fc, index) => ({
+        id: `call_${Date.now()}_${index}`,
+        type: 'function',
+        function: {
+          name: fc.functionCall!.name,
+          arguments: JSON.stringify(fc.functionCall!.args)
+        }
+      }))
+    };
+  }
   
   return {
     role: 'assistant',
